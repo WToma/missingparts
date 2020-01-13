@@ -48,20 +48,6 @@ struct Card {
     rank: Rank,
 }
 
-impl Card {
-    fn random() -> Card {
-        let rnd = rand::thread_rng().gen_range(0, 52);
-
-        let suit = Suit::arr()[rnd / 13];
-        let rank = Rank::arr()[rnd % 13];
-
-        Card {
-            suit: suit,
-            rank: rank,
-        }
-    }
-}
-
 #[derive(Debug)]
 enum PlayerAction {
     Scavenge,
@@ -83,6 +69,8 @@ impl PlayerAction {
             return Self::first_number(&s).map(|n| Trade { with_player: n });
         } else if s.starts_with("steal") {
             return Self::first_number(&s).map(|n| Steal { from_player: n });
+        } else if s.starts_with("scrap") {
+            return Some(Scrap);
         }
 
         None
@@ -108,6 +96,7 @@ impl PlayerAction {
     }
 }
 
+#[derive(Debug)]
 struct Deck {
     shuffled_cards: Vec<Card>,
 }
@@ -144,6 +133,7 @@ impl Deck {
     }
 }
 
+#[derive(Debug)]
 struct Player {
     missing_part: Card,
     gathered_parts: Vec<Card>,
@@ -183,6 +173,7 @@ impl Player {
     }
 }
 
+#[derive(Debug)]
 struct Gameplay {
     draw: Deck,
     discard: Vec<Card>,
@@ -292,32 +283,42 @@ fn main() {
     println!("Missing Parts! -- the command line game");
     println!("Gameplay by Andy");
 
-    let player_secret_part_card = Card::random();
-    println!(
-        "Your secret part number (don't tell anyone) is: {:?}",
-        player_secret_part_card
-    );
+    println!("How many players?");
 
+    let mut num_players_str = String::new();
+    io::stdin()
+        .read_line(&mut num_players_str)
+        .expect("failed to read number of players");
+    let num_players_str = num_players_str.trim();
+    let num_players = num_players_str
+        .parse()
+        .expect("number of players must be a positive integer");
+
+    let mut gameplay = Gameplay::init(num_players);
     loop {
-        println!("What's your move?");
+        println!("{:#?}", gameplay);
 
-        let mut player_action_str = String::new();
-        io::stdin()
-            .read_line(&mut player_action_str)
-            .expect("failed to read player's action");
-        let player_action_str = player_action_str.trim();
-        if player_action_str.eq("quit") {
-            break;
-        }
+        for i in 0..gameplay.players.len() {
+            println!("Player {}, what's your move?", i);
+            let mut player_action_str = String::new();
+            io::stdin()
+                .read_line(&mut player_action_str)
+                .expect("failed to read player's action");
+            let player_action_str = player_action_str.trim();
+            if player_action_str.eq("quit") {
+                break;
+            }
 
-        let player_action = PlayerAction::parse(player_action_str);
-        match player_action {
-            Some(action) => println!("Your move was: {:?}", action),
-            None => println!(
-                "`{}` is not a valid action. {}",
-                player_action_str,
-                PlayerAction::example_actions()
-            ),
+            let player_action = PlayerAction::parse(player_action_str);
+            match player_action {
+                Some(action) => gameplay.process_player_action(i, action),
+                None => println!(
+                    "`{}` is not a valid action. {}
+                    You just wasted a turn",
+                    player_action_str,
+                    PlayerAction::example_actions()
+                ),
+            }
         }
     }
 }
