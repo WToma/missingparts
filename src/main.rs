@@ -260,11 +260,11 @@ impl Gameplay {
 
                 if deck_cards.len() > 0 {
                     let player = &mut self.players[player_index];
-                    let player_card = deck_cards.remove(0);
-                    player.receive_part(player_card);
+                    let other_player_card = deck_cards.remove(0);
+                    player.receive_parts(deck_cards);
 
                     let other_player = &mut self.players[with_player];
-                    other_player.receive_parts(deck_cards);
+                    other_player.receive_part(other_player_card);
                 } // else we should prevent this action from happening
             }
             Trade { with_player } => {
