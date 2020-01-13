@@ -1,4 +1,5 @@
 use rand::Rng;
+use std::fmt;
 use std::io;
 
 #[derive(Debug, Copy, Clone)]
@@ -46,6 +47,12 @@ impl Rank {
 struct Card {
     suit: Suit,
     rank: Rank,
+}
+
+impl fmt::Display for Card {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?} of {:?}", self.rank, self.suit)
+    }
 }
 
 #[derive(Debug)]
@@ -180,6 +187,46 @@ struct Gameplay {
     players: Vec<Player>,
 }
 
+impl fmt::Display for Gameplay {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for i in 0..self.players.len() {
+            write!(f, "Player {} has ", i)?;
+            let cards = &self.players[i].gathered_parts;
+            if !cards.is_empty() {
+                card_list(cards, f)?;
+            } else {
+                write!(f, "nothing")?;
+            }
+            write!(f, "\n")?;
+        }
+
+        write!(f, "The discard pile has ")?;
+        if !self.discard.is_empty() {
+            card_list(&self.discard, f)?;
+        } else {
+            write!(f, "nothing")?;
+        }
+        write!(f, "\n")?;
+
+        write!(
+            f,
+            "The deck has {} cards left\n",
+            self.draw.shuffled_cards.len()
+        )
+    }
+}
+fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
+    for i in 0..cards.len() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+
+        write!(f, "{}", &cards[i])?;
+    }
+
+    fmt::Result::Ok(())
+}
+
 impl Gameplay {
     fn init(num_players: usize) -> Gameplay {
         let mut missing_parts_deck = Deck::shuffle();
@@ -295,10 +342,17 @@ fn main() {
         .expect("number of players must be a positive integer");
 
     let mut gameplay = Gameplay::init(num_players);
+    for i in 0..gameplay.players.len() {
+        println!(
+            "Player {}, your secret part is {}, don't tell anyone",
+            i, &gameplay.players[i].missing_part
+        )
+    }
+
     loop {
         let mut quit = false;
         for i in 0..gameplay.players.len() {
-            println!("{:#?}", gameplay);
+            println!("{}", gameplay);
             println!("Player {}, what's your move?", i);
             let mut player_action_str = String::new();
             io::stdin()
