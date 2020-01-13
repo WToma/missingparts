@@ -1,7 +1,7 @@
 use rand::Rng;
 use std::io;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum Suit {
     Clubs,
     Diamonds,
@@ -9,7 +9,14 @@ enum Suit {
     Spades,
 }
 
-#[derive(Debug)]
+impl Suit {
+    fn arr() -> [Suit; 4] {
+        use Suit::*;
+        [Clubs, Diamonds, Hearts, Spades]
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
 enum Rank {
     Ace,
     Two,
@@ -26,6 +33,15 @@ enum Rank {
     King,
 }
 
+impl Rank {
+    fn arr() -> [Rank; 13] {
+        use Rank::*;
+        [
+            Ace, Two, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King,
+        ]
+    }
+}
+
 #[derive(Debug)]
 struct Card {
     suit: Suit,
@@ -36,30 +52,8 @@ impl Card {
     fn random() -> Card {
         let rnd = rand::thread_rng().gen_range(0, 52);
 
-        use Suit::*;
-        let suit = match rnd / 13 {
-            0 => Clubs,
-            1 => Diamonds,
-            2 => Hearts,
-            _ => Spades,
-        };
-
-        use Rank::*;
-        let rank = match rnd % 13 {
-            0 => Ace,
-            1 => Two,
-            2 => Three,
-            3 => Four,
-            4 => Five,
-            5 => Six,
-            6 => Seven,
-            7 => Eight,
-            8 => Nine,
-            9 => Ten,
-            10 => Jack,
-            11 => Queen,
-            _ => King,
-        };
+        let suit = Suit::arr()[rnd / 13];
+        let rank = Rank::arr()[rnd % 13];
 
         Card {
             suit: suit,
@@ -71,9 +65,10 @@ impl Card {
 #[derive(Debug)]
 enum PlayerAction {
     Scavenge,
-    Share { with_player: i32 },
-    Trade { with_player: i32 },
-    Steal { from_player: i32 },
+    Share { with_player: usize },
+    Trade { with_player: usize },
+    Steal { from_player: usize },
+    Scrap,
 }
 
 impl PlayerAction {
@@ -83,11 +78,11 @@ impl PlayerAction {
         if s.starts_with("scavenge") {
             return Some(Scavenge);
         } else if s.starts_with("share") {
-            return first_number(&s).map(|n| Share { with_player: n });
+            return Self::first_number(&s).map(|n| Share { with_player: n });
         } else if s.starts_with("trade") {
-            return first_number(&s).map(|n| Trade { with_player: n });
+            return Self::first_number(&s).map(|n| Trade { with_player: n });
         } else if s.starts_with("steal") {
-            return first_number(&s).map(|n| Steal { from_player: n });
+            return Self::first_number(&s).map(|n| Steal { from_player: n });
         }
 
         None
@@ -95,21 +90,202 @@ impl PlayerAction {
 
     fn example_actions() -> String {
         let s = "The following are the valid actions:
-        - `scavenge` -- inspect 3 parts from the deck, you get to keep 1, the other 2 are discarded
+        - `scavenge` -- inspect 3 parts from the deck, you get to pick 1, the other 2 are discarded
         - `share [player_id]` -- you get 2 new parts from the deck, the other player gets 1
         - `trade [player_id]` -- start a trade with the other player
-        - `steal [player_id]` -- steal a part from the other player";
+        - `steal [player_id]` -- steal a part from the other player
+        - `scrap` -- discard 4 parts and pick one card from the discard pile";
 
         String::from(s)
     }
+
+    fn first_number(s: &str) -> Option<usize> {
+        s.split_whitespace()
+            .map(|ss| ss.parse())
+            .filter(|pr| pr.is_ok())
+            .map(|pr| pr.expect("we should have filtered errors already"))
+            .next()
+    }
 }
 
-fn first_number(s: &str) -> Option<i32> {
-    s.split_whitespace()
-        .map(|ss| ss.parse())
-        .filter(|pr| pr.is_ok())
-        .map(|pr| pr.expect("we should have filtered errors already"))
-        .next()
+struct Deck {
+    shuffled_cards: Vec<Card>,
+}
+
+impl Deck {
+    fn shuffle() -> Deck {
+        let mut cards: Vec<Card> = Vec::new();
+        for suit in Suit::arr().iter() {
+            for rank in Rank::arr().iter() {
+                cards.push(Card {
+                    suit: *suit,
+                    rank: *rank,
+                });
+            }
+        }
+        rand::thread_rng().shuffle(&mut cards[..]);
+        Deck {
+            shuffled_cards: cards,
+        }
+    }
+
+    fn remove_top(&mut self, n: usize) -> Vec<Card> {
+        use std::cmp::min;
+        let mut result = Vec::new();
+        for _ in 0..min(n, self.shuffled_cards.len()) {
+            result.push(self.shuffled_cards.remove(0));
+        }
+        result
+    }
+
+    fn remove_index(&mut self, i: usize) -> Card {
+        // panics if i is out of bounds -- use Option?
+        self.shuffled_cards.remove(i)
+    }
+}
+
+struct Player {
+    missing_part: Card,
+    gathered_parts: Vec<Card>,
+}
+
+impl Player {
+    fn init(missing_parts_deck: &mut Deck) -> Player {
+        let missing_part = missing_parts_deck.remove_index(0);
+        Player {
+            missing_part,
+            gathered_parts: Vec::new(),
+        }
+    }
+
+    fn receive_part(&mut self, c: Card) -> () {
+        self.gathered_parts.push(c);
+    }
+
+    fn receive_parts(&mut self, mut c: Vec<Card>) -> () {
+        while !c.is_empty() {
+            self.receive_part(c.remove(0));
+        }
+    }
+
+    fn remove_part(&mut self, i: usize) -> Card {
+        self.gathered_parts.remove(i)
+    }
+
+    fn remove_parts(&mut self, n: usize) -> Vec<Card> {
+        let result = Vec::new();
+        let mut n = n;
+        while !self.gathered_parts.is_empty() && n > 0 {
+            self.remove_part(0);
+            n -= 1;
+        }
+        result
+    }
+}
+
+struct Gameplay {
+    draw: Deck,
+    discard: Vec<Card>,
+    players: Vec<Player>,
+}
+
+impl Gameplay {
+    fn init(num_players: usize) -> Gameplay {
+        let mut missing_parts_deck = Deck::shuffle();
+        let mut players = Vec::new();
+        for _ in 0..num_players {
+            players.push(Player::init(&mut missing_parts_deck));
+        }
+        Gameplay {
+            players,
+            draw: Deck::shuffle(),
+            discard: Vec::new(),
+        }
+    }
+
+    fn process_player_action(&mut self, player_index: usize, player_action: PlayerAction) -> () {
+        use PlayerAction::*;
+        match player_action {
+            Scavenge => {
+                let player = &mut self.players[player_index];
+                let mut deck_cards = self.draw.remove_top(3);
+                if deck_cards.len() > 0 {
+                    // for now always pick the first card, but at this point we should prompt the player to select
+                    let player_card = deck_cards.remove(0);
+                    player.receive_part(player_card);
+                    self.discard.append(&mut deck_cards);
+                }
+                // else we should prevent this action from happening
+            }
+            Share { with_player } => {
+                let mut deck_cards = self.draw.remove_top(3);
+
+                if deck_cards.len() > 0 {
+                    let player = &mut self.players[player_index];
+                    let player_card = deck_cards.remove(0);
+                    player.receive_part(player_card);
+
+                    let other_player = &mut self.players[with_player];
+                    other_player.receive_parts(deck_cards);
+                } // else we should prevent this action from happening
+            }
+            Trade { with_player } => {
+                let player = &self.players[player_index];
+                let other_player = &self.players[with_player];
+                if !player.gathered_parts.is_empty() && !other_player.gathered_parts.is_empty() {
+                    // for now we always trade the top cards. but in reality at this point both players should
+                    // be able to select which card to trade, if any, and if there is no agreement, they can
+                    // abort the trade, in which case the action completes without changing the game state
+
+                    // this weird dance is to avoid having 2 elements borrowed mut at the same time, which the borrow
+                    // checker does not like
+                    let player_card = {
+                        let player = &mut self.players[player_index];
+                        player.remove_part(0)
+                    };
+                    let other_player_card = {
+                        let other_player = &mut self.players[with_player];
+                        other_player.remove_part(0)
+                    };
+
+                    {
+                        let player = &mut self.players[player_index];
+                        player.receive_part(other_player_card);
+                    }
+                    {
+                        let other_player = &mut self.players[with_player];
+                        other_player.receive_part(player_card);
+                    }
+                } // else we should prevent this action from happening
+            }
+            Steal { from_player } => {
+                let other_player = &self.players[from_player];
+                if !other_player.gathered_parts.is_empty() {
+                    // for now we always steal the top card, but in reality at this point the player who is stealing
+                    // can choose the card
+
+                    let card = {
+                        let other_player = &mut self.players[from_player];
+                        other_player.remove_part(0)
+                    };
+
+                    let player = &mut self.players[player_index];
+                    player.receive_part(card);
+                } // else we should prevent this action from happening
+            }
+            Scrap => {
+                let player = &mut self.players[player_index];
+                if player.gathered_parts.len() >= 4 && !self.discard.is_empty() {
+                    // for now always choose the first card in discard, but in reality at this point the player
+                    // can choose
+                    let pick_card = self.discard.remove(0);
+                    player.receive_part(pick_card);
+                    let mut scrapped_cards = player.remove_parts(4);
+                    self.discard.append(&mut scrapped_cards);
+                } // else we should prevent this action from happening
+            }
+        }
+    }
 }
 
 fn main() {
