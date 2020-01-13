@@ -296,9 +296,9 @@ fn main() {
 
     let mut gameplay = Gameplay::init(num_players);
     loop {
-        println!("{:#?}", gameplay);
-
+        let mut quit = false;
         for i in 0..gameplay.players.len() {
+            println!("{:#?}", gameplay);
             println!("Player {}, what's your move?", i);
             let mut player_action_str = String::new();
             io::stdin()
@@ -306,6 +306,7 @@ fn main() {
                 .expect("failed to read player's action");
             let player_action_str = player_action_str.trim();
             if player_action_str.eq("quit") {
+                quit = true;
                 break;
             }
 
@@ -313,12 +314,15 @@ fn main() {
             match player_action {
                 Some(action) => gameplay.process_player_action(i, action),
                 None => println!(
-                    "`{}` is not a valid action. {}
-                    You just wasted a turn",
+                    "`{}` is not a valid action. {}\nYou just wasted a turn",
                     player_action_str,
                     PlayerAction::example_actions()
                 ),
             }
+        }
+
+        if quit {
+            break;
         }
     }
 }
