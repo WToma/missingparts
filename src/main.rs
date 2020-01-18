@@ -111,8 +111,8 @@ struct Deck {
 impl Deck {
     fn shuffle() -> Deck {
         let mut cards: Vec<Card> = Vec::new();
-        for suit in Suit::arr().iter() {
-            for rank in Rank::arr().iter() {
+        for suit in &Suit::arr() {
+            for rank in &Rank::arr() {
                 cards.push(Card {
                     suit: *suit,
                     rank: *rank,
