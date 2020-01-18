@@ -2,7 +2,7 @@ use rand::Rng;
 use std::fmt;
 use std::io;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Suit {
     Clubs,
     Diamonds,
@@ -17,7 +17,7 @@ impl Suit {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Rank {
     Ace,
     Two,
@@ -43,7 +43,7 @@ impl Rank {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Card {
     suit: Suit,
     rank: Rank,
@@ -189,11 +189,11 @@ struct Gameplay {
 
 impl fmt::Display for Gameplay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for i in 0..self.players.len() {
+        for (i, player) in self.players.iter().enumerate() {
             write!(f, "Player {} has ", i)?;
-            let cards = &self.players[i].gathered_parts;
+            let cards = &player.gathered_parts;
             if !cards.is_empty() {
-                card_list(cards, f)?;
+                card_list(&cards, f)?;
             } else {
                 write!(f, "nothing")?;
             }
@@ -216,12 +216,12 @@ impl fmt::Display for Gameplay {
     }
 }
 fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
-    for i in 0..cards.len() {
+    for (i, card) in cards.iter().enumerate() {
         if i > 0 {
             write!(f, ", ")?;
         }
 
-        write!(f, "{}", &cards[i])?;
+        write!(f, "{}", card)?;
     }
 
     fmt::Result::Ok(())
@@ -342,10 +342,10 @@ fn main() {
         .expect("number of players must be a positive integer");
 
     let mut gameplay = Gameplay::init(num_players);
-    for i in 0..gameplay.players.len() {
+    for (i, player) in gameplay.players.iter().enumerate() {
         println!(
             "Player {}, your secret part is {}, don't tell anyone",
-            i, &gameplay.players[i].missing_part
+            i, player.missing_part
         )
     }
 
