@@ -1,4 +1,5 @@
 use rand::Rng;
+use std::collections::HashMap;
 use std::fmt;
 use std::io;
 
@@ -17,7 +18,7 @@ impl Suit {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum Rank {
     Ace,
     Two,
@@ -62,6 +63,7 @@ enum PlayerAction {
     Trade { with_player: usize },
     Steal { from_player: usize },
     Scrap,
+    Escape,
 }
 
 impl PlayerAction {
@@ -78,6 +80,8 @@ impl PlayerAction {
             return Self::first_number(&s).map(|n| Steal { from_player: n });
         } else if s.starts_with("scrap") {
             return Some(Scrap);
+        } else if s.starts_with("escape") {
+            return Some(Escape);
         }
 
         None
@@ -89,7 +93,8 @@ impl PlayerAction {
         - `share [player_id]` -- you get 2 new parts from the deck, the other player gets 1
         - `trade [player_id]` -- start a trade with the other player
         - `steal [player_id]` -- steal a part from the other player
-        - `scrap` -- discard 4 parts and pick one card from the discard pile";
+        - `scrap` -- discard 4 parts and pick one card from the discard pile
+        - `escape` -- escape the wasteland";
 
         String::from(s)
     }
@@ -144,6 +149,7 @@ impl Deck {
 struct Player {
     missing_part: Card,
     gathered_parts: Vec<Card>,
+    escaped: bool,
 }
 
 impl Player {
@@ -152,24 +158,39 @@ impl Player {
         Player {
             missing_part,
             gathered_parts: Vec::new(),
+            escaped: false,
         }
     }
 
     fn receive_part(&mut self, c: Card) -> () {
+        if self.escaped {
+            // TODO remove these `panic!` checks. Probably should use a separate type for
+            // escaped player states so that these cannot be called accidentally
+            panic!("gameplay bug: receive_part triggered on escaped player");
+        }
         self.gathered_parts.push(c);
     }
 
     fn receive_parts(&mut self, mut c: Vec<Card>) -> () {
+        if self.escaped {
+            panic!("gameplay bug: receive_parts triggered on escaped player");
+        }
         while !c.is_empty() {
             self.receive_part(c.remove(0));
         }
     }
 
     fn remove_part(&mut self, i: usize) -> Card {
+        if self.escaped {
+            panic!("gameplay bug: remove_part triggered on escaped player");
+        }
         self.gathered_parts.remove(i)
     }
 
     fn remove_parts(&mut self, n: usize) -> Vec<Card> {
+        if self.escaped {
+            panic!("gameplay bug: remove_parts triggered on escaped player");
+        }
         let result = Vec::new();
         let mut n = n;
         while !self.gathered_parts.is_empty() && n > 0 {
@@ -177,6 +198,30 @@ impl Player {
             n -= 1;
         }
         result
+    }
+
+    fn escape(&mut self) -> () {
+        if !self.has_4_parts() {
+            panic!("gameplay bug: escape triggered without has_4_parts() checked");
+        }
+
+        self.escaped = true;
+    }
+
+    fn has_4_parts(&self) -> bool {
+        let mut num_cards_per_rank = HashMap::new();
+        for card in &self.gathered_parts {
+            let n = num_cards_per_rank.entry(card.rank).or_insert(0);
+            *n += 1;
+            if *n >= 4 {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn has_missing_part(&self) -> bool {
+        self.gathered_parts.contains(&self.missing_part)
     }
 }
 
@@ -190,7 +235,8 @@ struct Gameplay {
 impl fmt::Display for Gameplay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (i, player) in self.players.iter().enumerate() {
-            write!(f, "Player {} has ", i)?;
+            let in_game_or_escaped = if player.escaped { "escaped" } else { "in game" };
+            write!(f, "Player {} ({}) has ", i, in_game_or_escaped)?;
             let cards = &player.gathered_parts;
             if !cards.is_empty() {
                 card_list(&cards, f)?;
@@ -246,31 +292,41 @@ impl Gameplay {
         match player_action {
             Scavenge => {
                 let player = &mut self.players[player_index];
-                let mut deck_cards = self.draw.remove_top(3);
-                if deck_cards.len() > 0 {
-                    // for now always pick the first card, but at this point we should prompt the player to select
-                    let player_card = deck_cards.remove(0);
-                    player.receive_part(player_card);
-                    self.discard.append(&mut deck_cards);
+                if !player.escaped {
+                    let mut deck_cards = self.draw.remove_top(3);
+                    if deck_cards.len() > 0 {
+                        // for now always pick the first card, but at this point we should prompt the player to select
+                        let player_card = deck_cards.remove(0);
+                        player.receive_part(player_card);
+                        self.discard.append(&mut deck_cards);
+                    }
+                    // else we should prevent this action from happening. or re-shuffle the discard pile? (ask Andy)
                 }
-                // else we should prevent this action from happening
             }
             Share { with_player } => {
                 let mut deck_cards = self.draw.remove_top(3);
 
                 if deck_cards.len() > 0 {
-                    let player = &mut self.players[player_index];
-                    let other_player_card = deck_cards.remove(0);
-                    player.receive_parts(deck_cards);
+                    let player = &self.players[player_index];
+                    let other_player = &self.players[with_player];
+                    if !player.escaped && !other_player.escaped {
+                        let player = &mut self.players[player_index];
+                        let other_player_card = deck_cards.remove(0);
+                        player.receive_parts(deck_cards);
 
-                    let other_player = &mut self.players[with_player];
-                    other_player.receive_part(other_player_card);
-                } // else we should prevent this action from happening
+                        let other_player = &mut self.players[with_player];
+                        other_player.receive_part(other_player_card);
+                    } // if other_player.escaped we should prevent the action from happening.
+                } // else we should prevent this action from happening. or re-shuffle the discard pile? (ask Andy)
             }
             Trade { with_player } => {
                 let player = &self.players[player_index];
                 let other_player = &self.players[with_player];
-                if !player.gathered_parts.is_empty() && !other_player.gathered_parts.is_empty() {
+                if !player.gathered_parts.is_empty()
+                    && !other_player.gathered_parts.is_empty()
+                    && !player.escaped
+                    && !other_player.escaped
+                {
                     // for now we always trade the top cards. but in reality at this point both players should
                     // be able to select which card to trade, if any, and if there is no agreement, they can
                     // abort the trade, in which case the action completes without changing the game state
@@ -294,11 +350,15 @@ impl Gameplay {
                         let other_player = &mut self.players[with_player];
                         other_player.receive_part(player_card);
                     }
-                } // else we should prevent this action from happening
+                } // else we should prevent this action from happening. if other_player.escaped we should prevent the action from happening.
             }
             Steal { from_player } => {
                 let other_player = &self.players[from_player];
-                if !other_player.gathered_parts.is_empty() {
+                let player = &self.players[player_index];
+                if !other_player.gathered_parts.is_empty()
+                    && !player.escaped
+                    && !other_player.escaped
+                {
                     // for now we always steal the top card, but in reality at this point the player who is stealing
                     // can choose the card
 
@@ -309,11 +369,11 @@ impl Gameplay {
 
                     let player = &mut self.players[player_index];
                     player.receive_part(card);
-                } // else we should prevent this action from happening
+                } // else we should prevent this action from happening. if other_player.escaped we should prevent the action from happening.
             }
             Scrap => {
                 let player = &mut self.players[player_index];
-                if player.gathered_parts.len() >= 4 && !self.discard.is_empty() {
+                if player.gathered_parts.len() >= 4 && !self.discard.is_empty() && !player.escaped {
                     // for now always choose the first card in discard, but in reality at this point the player
                     // can choose
                     let pick_card = self.discard.remove(0);
@@ -321,6 +381,12 @@ impl Gameplay {
                     let mut scrapped_cards = player.remove_parts(4);
                     self.discard.append(&mut scrapped_cards);
                 } // else we should prevent this action from happening
+            }
+            Escape => {
+                let player = &mut self.players[player_index];
+                if !player.escaped && player.has_4_parts() {
+                    player.escape();
+                }
             }
         }
     }
@@ -352,26 +418,28 @@ fn main() {
     loop {
         let mut quit = false;
         for i in 0..gameplay.players.len() {
-            println!("{}", gameplay);
-            println!("Player {}, what's your move?", i);
-            let mut player_action_str = String::new();
-            io::stdin()
-                .read_line(&mut player_action_str)
-                .expect("failed to read player's action");
-            let player_action_str = player_action_str.trim();
-            if player_action_str.eq("quit") {
-                quit = true;
-                break;
-            }
+            if !gameplay.players[i].escaped {
+                println!("{}", gameplay);
+                println!("Player {}, what's your move?", i);
+                let mut player_action_str = String::new();
+                io::stdin()
+                    .read_line(&mut player_action_str)
+                    .expect("failed to read player's action");
+                let player_action_str = player_action_str.trim();
+                if player_action_str.eq("quit") {
+                    quit = true;
+                    break;
+                }
 
-            let player_action = PlayerAction::parse(player_action_str);
-            match player_action {
-                Some(action) => gameplay.process_player_action(i, action),
-                None => println!(
-                    "`{}` is not a valid action. {}\nYou just wasted a turn",
-                    player_action_str,
-                    PlayerAction::example_actions()
-                ),
+                let player_action = PlayerAction::parse(player_action_str);
+                match player_action {
+                    Some(action) => gameplay.process_player_action(i, action),
+                    None => println!(
+                        "`{}` is not a valid action. {}\nYou just wasted a turn",
+                        player_action_str,
+                        PlayerAction::example_actions()
+                    ),
+                }
             }
         }
 
