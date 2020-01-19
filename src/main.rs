@@ -708,6 +708,9 @@ fn main() {
                     }
                 }
             }
+            if quit {
+                break;
+            }
         }
 
         if no_moves_available {
