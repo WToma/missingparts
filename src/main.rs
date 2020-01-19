@@ -135,7 +135,7 @@ enum PlayerAction {
     Steal { from_player: usize },
     Scrap,
     Escape,
-    CheatGetCard { card: Card },
+    CheatGetCards { cards: Vec<Card> },
     Skip,
 }
 
@@ -156,8 +156,12 @@ impl PlayerAction {
         } else if s.starts_with("escape") {
             return Some(Escape);
         } else if s.starts_with("conjure") {
-            let card = Card::try_from(&s[7..]).ok()?;
-            return Some(CheatGetCard { card });
+            let cards = s[7..]
+                .split(&[',', ';'][..])
+                .map(Card::try_from)
+                .collect::<Result<Vec<Card>, ()>>()
+                .ok()?;
+            return Some(CheatGetCards { cards });
         } else if s.starts_with("skip") {
             return Some(Skip);
         }
@@ -547,9 +551,9 @@ impl Gameplay {
                     self.trigger_endgame();
                 }
             }
-            CheatGetCard { card } => {
+            CheatGetCards { cards } => {
                 let player = &mut self.players[player_index];
-                player.receive_part(card);
+                player.receive_parts(cards);
             }
             Skip => (),
         }
