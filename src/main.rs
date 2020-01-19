@@ -64,6 +64,7 @@ enum PlayerAction {
     Steal { from_player: usize },
     Scrap,
     Escape,
+    CheatGetCard { card: Card },
 }
 
 impl PlayerAction {
@@ -82,6 +83,17 @@ impl PlayerAction {
             return Some(Scrap);
         } else if s.starts_with("escape") {
             return Some(Escape);
+        } else if s.starts_with("houdini") {
+            let numbers = Self::all_numbers(&s);
+            if numbers.len() >= 2 {
+                let suit = Suit::arr()[numbers[0]];
+                let rank = Rank::arr()[numbers[1]];
+                return Some(CheatGetCard {
+                    card: Card { suit, rank },
+                });
+            } else {
+                return None;
+            }
         }
 
         None
@@ -105,6 +117,14 @@ impl PlayerAction {
             .filter(|pr| pr.is_ok())
             .map(|pr| pr.expect("we should have filtered errors already"))
             .next()
+    }
+
+    fn all_numbers(s: &str) -> Vec<usize> {
+        s.split_whitespace()
+            .map(|ss| ss.parse())
+            .filter(|pr| pr.is_ok())
+            .map(|pr| pr.expect("we should have filtered errors already"))
+            .collect()
     }
 }
 
@@ -387,6 +407,10 @@ impl Gameplay {
                 if !player.escaped && player.has_4_parts() {
                     player.escape();
                 }
+            }
+            CheatGetCard { card } => {
+                let player = &mut self.players[player_index];
+                player.receive_part(card);
             }
         }
     }
