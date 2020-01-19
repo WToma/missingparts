@@ -170,6 +170,7 @@ struct Player {
     missing_part: Card,
     gathered_parts: Vec<Card>,
     escaped: bool,
+    moves_left: Option<u32>,
 }
 
 impl Player {
@@ -179,6 +180,7 @@ impl Player {
             missing_part,
             gathered_parts: Vec::new(),
             escaped: false,
+            moves_left: None,
         }
     }
 
@@ -228,6 +230,19 @@ impl Player {
         self.escaped = true;
     }
 
+    fn can_make_move(&self) -> bool {
+        let has_moves_left = self.moves_left.map_or(true, |x| (x > 0));
+        !self.escaped && has_moves_left
+    }
+
+    fn set_remaining_moves(&mut self, n: u32) -> () {
+        self.moves_left = Some(n);
+    }
+
+    fn decrease_remaining_moves(&mut self) -> () {
+        self.moves_left = self.moves_left.map(|x| x - 1);
+    }
+
     fn has_4_parts(&self) -> bool {
         let mut num_cards_per_rank = HashMap::new();
         for card in &self.gathered_parts {
@@ -255,7 +270,14 @@ struct Gameplay {
 impl fmt::Display for Gameplay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (i, player) in self.players.iter().enumerate() {
-            let in_game_or_escaped = if player.escaped { "escaped" } else { "in game" };
+            let in_game_or_escaped = if player.escaped {
+                "escaped".to_string()
+            } else {
+                player
+                    .moves_left
+                    .map(|x| x.to_string() + " moves left")
+                    .unwrap_or("in game".to_string())
+            };
             write!(f, "Player {} ({}) has ", i, in_game_or_escaped)?;
             let cards = &player.gathered_parts;
             if !cards.is_empty() {
@@ -312,7 +334,7 @@ impl Gameplay {
         match player_action {
             Scavenge => {
                 let player = &mut self.players[player_index];
-                if !player.escaped {
+                if player.can_make_move() {
                     let mut deck_cards = self.draw.remove_top(3);
                     if deck_cards.len() > 0 {
                         // for now always pick the first card, but at this point we should prompt the player to select
@@ -329,7 +351,7 @@ impl Gameplay {
                 if deck_cards.len() > 0 {
                     let player = &self.players[player_index];
                     let other_player = &self.players[with_player];
-                    if !player.escaped && !other_player.escaped {
+                    if player.can_make_move() && !other_player.escaped {
                         let player = &mut self.players[player_index];
                         let other_player_card = deck_cards.remove(0);
                         player.receive_parts(deck_cards);
@@ -344,7 +366,7 @@ impl Gameplay {
                 let other_player = &self.players[with_player];
                 if !player.gathered_parts.is_empty()
                     && !other_player.gathered_parts.is_empty()
-                    && !player.escaped
+                    && player.can_make_move()
                     && !other_player.escaped
                 {
                     // for now we always trade the top cards. but in reality at this point both players should
@@ -376,7 +398,7 @@ impl Gameplay {
                 let other_player = &self.players[from_player];
                 let player = &self.players[player_index];
                 if !other_player.gathered_parts.is_empty()
-                    && !player.escaped
+                    && player.can_make_move()
                     && !other_player.escaped
                 {
                     // for now we always steal the top card, but in reality at this point the player who is stealing
@@ -393,7 +415,10 @@ impl Gameplay {
             }
             Scrap => {
                 let player = &mut self.players[player_index];
-                if player.gathered_parts.len() >= 4 && !self.discard.is_empty() && !player.escaped {
+                if player.gathered_parts.len() >= 4
+                    && !self.discard.is_empty()
+                    && player.can_make_move()
+                {
                     // for now always choose the first card in discard, but in reality at this point the player
                     // can choose
                     let pick_card = self.discard.remove(0);
@@ -405,12 +430,37 @@ impl Gameplay {
             Escape => {
                 let player = &mut self.players[player_index];
                 if !player.escaped && player.has_4_parts() {
+                    // not using the can_make_move check here: escape is possible without moves
                     player.escape();
+                    self.trigger_endgame();
                 }
             }
             CheatGetCard { card } => {
                 let player = &mut self.players[player_index];
                 player.receive_part(card);
+            }
+        }
+        self.auto_escape();
+        self.players[player_index].decrease_remaining_moves();
+    }
+
+    fn auto_escape(&mut self) -> () {
+        let mut escaped = false;
+        for player in &mut self.players {
+            if player.has_4_parts() && player.has_missing_part() {
+                player.escape();
+                escaped = true;
+            }
+        }
+        if escaped {
+            self.trigger_endgame();
+        }
+    }
+
+    fn trigger_endgame(&mut self) -> () {
+        for player in &mut self.players {
+            if !player.escaped {
+                player.set_remaining_moves(1);
             }
         }
     }
@@ -442,7 +492,7 @@ fn main() {
     loop {
         let mut quit = false;
         for i in 0..gameplay.players.len() {
-            if !gameplay.players[i].escaped {
+            if gameplay.players[i].can_make_move() {
                 println!("{}", gameplay);
                 println!("Player {}, what's your move?", i);
                 let mut player_action_str = String::new();
