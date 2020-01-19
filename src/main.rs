@@ -1,5 +1,6 @@
 use rand::Rng;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::io;
 
@@ -15,6 +16,22 @@ impl Suit {
     fn arr() -> [Suit; 4] {
         use Suit::*;
         [Clubs, Diamonds, Hearts, Spades]
+    }
+}
+
+impl TryFrom<&str> for Suit {
+    type Error = ();
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        use Suit::*;
+        let first_char = s.trim().chars().next().ok_or(())?;
+        match first_char.to_ascii_lowercase() {
+            'c' => Ok(Clubs),
+            'd' => Ok(Diamonds),
+            'h' => Ok(Hearts),
+            's' => Ok(Spades),
+            _ => Err(()),
+        }
     }
 }
 
@@ -44,6 +61,38 @@ impl Rank {
     }
 }
 
+fn first_number(s: &str) -> Option<usize> {
+    s.split_whitespace()
+        .map(|ss| ss.parse())
+        .filter(|pr| pr.is_ok())
+        .map(|pr| pr.expect("we should have filtered errors already"))
+        .next()
+}
+
+impl TryFrom<&str> for Rank {
+    type Error = ();
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        use Rank::*;
+
+        let first_char = s.chars().next().ok_or(())?;
+        match first_char.to_ascii_lowercase() {
+            'a' => Ok(Ace),
+            'j' => Ok(Jack),
+            'q' => Ok(Queen),
+            'k' => Ok(King),
+            _ => {
+                let n: usize = first_number(s).ok_or(())?;
+                if n >= 1 && n <= 13 {
+                    Ok(Rank::arr()[n - 1])
+                } else {
+                    Err(())
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct Card {
     suit: Suit,
@@ -53,6 +102,28 @@ struct Card {
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?} of {:?}", self.rank, self.suit)
+    }
+}
+
+impl TryFrom<&str> for Card {
+    type Error = ();
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        // accepted format: "{rank} [of ]{suit}", e.g. "4 of Clubs", "a of h", "K D"
+        let mut parts = s.split_whitespace();
+
+        let rank = parts.next().ok_or(())?;
+        let rank = Rank::try_from(rank)?;
+
+        let second_part = parts.next().ok_or(())?;
+        let suit = if second_part.to_ascii_lowercase() == "of" {
+            parts.next().ok_or(())?
+        } else {
+            second_part
+        };
+        let suit = Suit::try_from(suit)?;
+
+        Ok(Card { suit, rank })
     }
 }
 
@@ -75,26 +146,18 @@ impl PlayerAction {
         if s.starts_with("scavenge") {
             return Some(Scavenge);
         } else if s.starts_with("share") {
-            return Self::first_number(&s).map(|n| Share { with_player: n });
+            return first_number(&s).map(|n| Share { with_player: n });
         } else if s.starts_with("trade") {
-            return Self::first_number(&s).map(|n| Trade { with_player: n });
+            return first_number(&s).map(|n| Trade { with_player: n });
         } else if s.starts_with("steal") {
-            return Self::first_number(&s).map(|n| Steal { from_player: n });
+            return first_number(&s).map(|n| Steal { from_player: n });
         } else if s.starts_with("scrap") {
             return Some(Scrap);
         } else if s.starts_with("escape") {
             return Some(Escape);
         } else if s.starts_with("houdini") {
-            let numbers = Self::all_numbers(&s);
-            if numbers.len() >= 2 {
-                let suit = Suit::arr()[numbers[0]];
-                let rank = Rank::arr()[numbers[1]];
-                return Some(CheatGetCard {
-                    card: Card { suit, rank },
-                });
-            } else {
-                return None;
-            }
+            let card = Card::try_from(&s[7..]).ok()?;
+            return Some(CheatGetCard { card });
         } else if s.starts_with("skip") {
             return Some(Skip);
         }
@@ -113,22 +176,6 @@ impl PlayerAction {
         - `skip` -- skip your turn";
 
         String::from(s)
-    }
-
-    fn first_number(s: &str) -> Option<usize> {
-        s.split_whitespace()
-            .map(|ss| ss.parse())
-            .filter(|pr| pr.is_ok())
-            .map(|pr| pr.expect("we should have filtered errors already"))
-            .next()
-    }
-
-    fn all_numbers(s: &str) -> Vec<usize> {
-        s.split_whitespace()
-            .map(|ss| ss.parse())
-            .filter(|pr| pr.is_ok())
-            .map(|pr| pr.expect("we should have filtered errors already"))
-            .collect()
     }
 }
 
