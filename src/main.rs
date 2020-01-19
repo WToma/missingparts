@@ -489,10 +489,13 @@ fn main() {
         )
     }
 
+    let mut game_finished = false;
     loop {
         let mut quit = false;
+        let mut no_moves_available = true;
         for i in 0..gameplay.players.len() {
             if gameplay.players[i].can_make_move() {
+                no_moves_available = false;
                 println!("{}", gameplay);
                 println!("Player {}, what's your move?", i);
                 let mut player_action_str = String::new();
@@ -517,8 +520,45 @@ fn main() {
             }
         }
 
+        if no_moves_available {
+            game_finished = true;
+            break;
+        }
+
         if quit {
             break;
         }
+    }
+
+    if game_finished {
+        let mut winners = Vec::new();
+        let mut escaped_but_not_winner = Vec::new();
+        let mut stuck = Vec::new();
+
+        for (i, player) in gameplay.players.iter().enumerate() {
+            let has_4_parts = player.has_4_parts();
+            let has_missing_part = player.has_missing_part();
+            if has_4_parts && has_missing_part {
+                winners.push(i);
+            } else if has_4_parts {
+                escaped_but_not_winner.push(i);
+            } else {
+                stuck.push(i);
+            }
+        }
+
+        let winners: Vec<String> = winners.iter().map(|x| x.to_string()).collect();
+        let escaped_but_not_winner: Vec<String> = escaped_but_not_winner
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        let stuck: Vec<String> = stuck.iter().map(|x| x.to_string()).collect();
+
+        println!("Winners: {}", winners.join(", "));
+        println!(
+            "Escaped, but never whole: {}",
+            escaped_but_not_winner.join(", ")
+        );
+        println!("Stuck in the wasteland: {}", stuck.join(", "));
     }
 }
