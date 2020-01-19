@@ -106,22 +106,41 @@ impl fmt::Display for Card {
 }
 
 impl TryFrom<&str> for Card {
-    type Error = ();
+    type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         // accepted format: "{rank} [of ]{suit}", e.g. "4 of Clubs", "a of h", "K D"
         let mut parts = s.split_whitespace();
 
-        let rank = parts.next().ok_or(())?;
-        let rank = Rank::try_from(rank)?;
+        let rank = parts.next().ok_or(format!(
+            "'{}' is not a valid card, because the rank is missing",
+            s,
+        ))?;
+        let rank = Rank::try_from(rank).map_err(|_| {
+            format!(
+                "'{}' is not a valid card, because '{}' is not a valid rank",
+                s, rank,
+            )
+        })?;
 
-        let second_part = parts.next().ok_or(())?;
+        let second_part = parts.next().ok_or(format!(
+            "'{}' is not a valid card, because it is missing the suit",
+            s
+        ))?;
         let suit = if second_part.to_ascii_lowercase() == "of" {
-            parts.next().ok_or(())?
+            parts.next().ok_or(format!(
+                "'{}' is not a valid card, because it is missing the suit",
+                s
+            ))?
         } else {
             second_part
         };
-        let suit = Suit::try_from(suit)?;
+        let suit = Suit::try_from(suit).map_err(|_| {
+            format!(
+                "'{}' is not a valid card, because '{}' is not a valid suit",
+                s, suit,
+            )
+        })?;
 
         Ok(Card { suit, rank })
     }
@@ -139,36 +158,47 @@ enum PlayerAction {
     Skip,
 }
 
-impl PlayerAction {
-    fn parse(s: &str) -> Option<PlayerAction> {
+impl TryFrom<&str> for PlayerAction {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
         use PlayerAction::*;
+
         let s = s.trim().to_lowercase();
         if s.starts_with("scavenge") {
-            return Some(Scavenge);
+            return Ok(Scavenge);
         } else if s.starts_with("share") {
-            return first_number(&s).map(|n| Share { with_player: n });
+            let n = first_number(&s)
+                .ok_or("to `share`, specify which player to share with (e.g. `share 0`)")?;
+            return Ok(Share { with_player: n });
         } else if s.starts_with("trade") {
-            return first_number(&s).map(|n| Trade { with_player: n });
+            let n = first_number(&s)
+                .ok_or("to `trade`, specify which player to trade with (e.g. `trade 0`)")?;
+            return Ok(Trade { with_player: n });
         } else if s.starts_with("steal") {
-            return first_number(&s).map(|n| Steal { from_player: n });
+            let n = first_number(&s)
+                .ok_or("to `steal`, specify which player to steal from (e.g. `steal 0`)")?;
+            return Ok(Steal { from_player: n });
         } else if s.starts_with("scrap") {
-            return Some(Scrap);
+            return Ok(Scrap);
         } else if s.starts_with("escape") {
-            return Some(Escape);
+            return Ok(Escape);
         } else if s.starts_with("conjure") {
             let cards = s[7..]
                 .split(&[',', ';'][..])
                 .map(Card::try_from)
-                .collect::<Result<Vec<Card>, ()>>()
-                .ok()?;
-            return Some(CheatGetCards { cards });
+                .collect::<Result<Vec<Card>, String>>()?;
+            return Ok(CheatGetCards { cards });
         } else if s.starts_with("skip") {
-            return Some(Skip);
+            return Ok(Skip);
         }
 
-        None
+        let first_word = s.split_whitespace().next().unwrap_or(&s);
+        Err(format!("'{}' is not a valid action", first_word))
     }
+}
 
+impl PlayerAction {
     fn example_actions() -> String {
         let s = "The following are the valid actions:
         - `scavenge` -- inspect 3 parts from the deck, you get to pick 1, the other 2 are discarded
@@ -660,18 +690,19 @@ fn main() {
                         break;
                     }
 
-                    let player_action = PlayerAction::parse(player_action_str);
+                    let player_action = PlayerAction::try_from(player_action_str);
                     match player_action {
-                        Some(action) => match gameplay.process_player_action(i, action) {
+                        Ok(action) => match gameplay.process_player_action(i, action) {
                             Ok(_) => player_made_valid_move = true,
                             Err(err) => println!(
                                 "`{}` is not possible at this time because {}",
                                 player_action_str, err
                             ),
                         },
-                        None => println!(
-                            "`{}` is not a valid action. {}",
+                        Err(problem) => println!(
+                            "`{}` is not a valid action: {}. {}",
                             player_action_str,
+                            problem,
                             PlayerAction::example_actions()
                         ),
                     }
