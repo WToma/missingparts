@@ -65,6 +65,7 @@ enum PlayerAction {
     Scrap,
     Escape,
     CheatGetCard { card: Card },
+    Skip,
 }
 
 impl PlayerAction {
@@ -94,6 +95,8 @@ impl PlayerAction {
             } else {
                 return None;
             }
+        } else if s.starts_with("skip") {
+            return Some(Skip);
         }
 
         None
@@ -106,7 +109,8 @@ impl PlayerAction {
         - `trade [player_id]` -- start a trade with the other player
         - `steal [player_id]` -- steal a part from the other player
         - `scrap` -- discard 4 parts and pick one card from the discard pile
-        - `escape` -- escape the wasteland";
+        - `escape` -- escape the wasteland
+        - `skip` -- skip your turn";
 
         String::from(s)
     }
@@ -337,6 +341,38 @@ fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
     fmt::Result::Ok(())
 }
 
+impl fmt::Display for ActionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use ActionError::*;
+        match *self {
+            DeckEmpty => write!(f, "the draw deck is empty"),
+            PlayerEscaped { escaped_player } => {
+                write!(f, "player {} already escaped", escaped_player)
+            }
+            PlayerCardsEmpty {
+                initiating_player,
+                empty_handed_player,
+            } => {
+                if initiating_player {
+                    write!(f, "you don't have any cards")
+                } else {
+                    write!(f, "player {} doesn't have any cards", empty_handed_player)
+                }
+            }
+            DiscardPileEmpty => write!(f, "the discard pile is empty"),
+            NotEnoughCardsToScrap {
+                num_available,
+                num_needed,
+            } => write!(
+                f,
+                "you don't have enough cards (you have {}, {} needed)",
+                num_available, num_needed
+            ),
+            EscapeConditionNotSatisfied => write!(f, "you don't have all 4 suits of the same rank"),
+        }
+    }
+}
+
 impl Gameplay {
     fn init(num_players: usize) -> Gameplay {
         let mut missing_parts_deck = Deck::shuffle();
@@ -468,6 +504,7 @@ impl Gameplay {
                 let player = &mut self.players[player_index];
                 player.receive_part(card);
             }
+            Skip => (),
         }
         self.auto_escape();
         self.players[player_index].decrease_remaining_moves();
@@ -551,43 +588,49 @@ fn main() {
     }
 
     let mut game_finished = false;
-    loop {
-        let mut quit = false;
+    let mut quit = false;
+    while !quit {
         let mut no_moves_available = true;
         for i in 0..gameplay.players.len() {
             if gameplay.players[i].can_make_move() {
                 no_moves_available = false;
                 println!("{}", gameplay);
-                println!("Player {}, what's your move?", i);
-                let mut player_action_str = String::new();
-                io::stdin()
-                    .read_line(&mut player_action_str)
-                    .expect("failed to read player's action");
-                let player_action_str = player_action_str.trim();
-                if player_action_str.eq("quit") {
-                    quit = true;
-                    break;
-                }
 
-                let player_action = PlayerAction::parse(player_action_str);
-                match player_action {
-                    Some(action) => gameplay.process_player_action(i, action).unwrap(), // TODO handle error
-                    None => println!(
-                        "`{}` is not a valid action. {}\nYou just wasted a turn",
-                        player_action_str,
-                        PlayerAction::example_actions()
-                    ),
+                let mut player_made_valid_move = false;
+                while !player_made_valid_move {
+                    println!("Player {}, what's your move?", i);
+                    let mut player_action_str = String::new();
+                    io::stdin()
+                        .read_line(&mut player_action_str)
+                        .expect("failed to read player's action");
+                    let player_action_str = player_action_str.trim();
+                    if player_action_str.eq("quit") {
+                        quit = true;
+                        break;
+                    }
+
+                    let player_action = PlayerAction::parse(player_action_str);
+                    match player_action {
+                        Some(action) => match gameplay.process_player_action(i, action) {
+                            Ok(_) => player_made_valid_move = true,
+                            Err(err) => println!(
+                                "`{}` is not possible at this time because {}",
+                                player_action_str, err
+                            ),
+                        },
+                        None => println!(
+                            "`{}` is not a valid action. {}",
+                            player_action_str,
+                            PlayerAction::example_actions()
+                        ),
+                    }
                 }
             }
         }
 
         if no_moves_available {
             game_finished = true;
-            break;
-        }
-
-        if quit {
-            break;
+            quit = true;
         }
     }
 
