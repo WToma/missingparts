@@ -155,7 +155,7 @@ impl PlayerAction {
             return Some(Scrap);
         } else if s.starts_with("escape") {
             return Some(Escape);
-        } else if s.starts_with("houdini") {
+        } else if s.starts_with("conjure") {
             let card = Card::try_from(&s[7..]).ok()?;
             return Some(CheatGetCard { card });
         } else if s.starts_with("skip") {
