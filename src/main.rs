@@ -602,7 +602,7 @@ impl Gameplay {
                     // for now we always trade the top cards. but in reality at this point both players should
                     // be able to select which card to trade, if any, and if there is no agreement, they can
                     // abort the trade, in which case the action completes without changing the game state
-
+                    // (check with Andy if they should be able to retry in this case)
                     // this weird dance is to avoid having 2 elements borrowed mut at the same time, which the borrow
                     // checker does not like
                     let player_card = {
