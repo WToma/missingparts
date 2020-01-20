@@ -93,7 +93,7 @@ impl TryFrom<&str> for Rank {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 struct Card {
     suit: Suit,
     rank: Rank,
@@ -149,12 +149,23 @@ impl TryFrom<&str> for Card {
 #[derive(Debug)]
 enum PlayerAction {
     Scavenge,
-    Share { with_player: usize },
-    Trade { with_player: usize },
-    Steal { from_player: usize },
-    Scrap,
+    Share {
+        with_player: usize,
+    },
+    Trade {
+        with_player: usize,
+    },
+    Steal {
+        from_player: usize,
+    },
+    Scrap {
+        player_cards: Vec<Card>,
+        for_discard_card: Card,
+    },
     Escape,
-    CheatGetCards { cards: Vec<Card> },
+    CheatGetCards {
+        cards: Vec<Card>,
+    },
     Skip,
 }
 
@@ -180,7 +191,29 @@ impl TryFrom<&str> for PlayerAction {
                 .ok_or("to `steal`, specify which player to steal from (e.g. `steal 0`)")?;
             return Ok(Steal { from_player: n });
         } else if s.starts_with("scrap") {
-            return Ok(Scrap);
+            let action_params_s = &s[5..];
+            match action_params_s
+                .split("for")
+                .collect::<Vec<&str>>()
+                .as_slice()
+            {
+                [player_cards, for_discard_card] => {
+                    let player_cards = player_cards
+                        .split(&[',', ';'][..])
+                        .map(Card::try_from)
+                        .collect::<Result<Vec<Card>, String>>()?;
+                    let for_discard_card = Card::try_from(*for_discard_card)?;
+                    return Ok(Scrap {
+                        player_cards,
+                        for_discard_card,
+                    });
+                }
+                _ => return Err(String::from(
+                    "to `scrap`, specify the cards to scrap, then `for`, then a card to get \
+                     from discard, e.g. \
+                     `scrap 2 of Hearts, 3 of Hearts, 4 of Hearts, 5 of Hearts for Ace of Spades`",
+                )),
+            }
         } else if s.starts_with("escape") {
             return Ok(Escape);
         } else if s.starts_with("conjure") {
@@ -205,7 +238,7 @@ impl PlayerAction {
         - `share [player_id]` -- you get 2 new parts from the deck, the other player gets 1
         - `trade [player_id]` -- start a trade with the other player
         - `steal [player_id]` -- steal a part from the other player
-        - `scrap` -- discard 4 parts and pick one card from the discard pile
+        - `scrap [4 cards you have] for [card in discard]` -- discard 4 parts and pick one card from the discard pile
         - `escape` -- escape the wasteland
         - `skip` -- skip your turn";
 
@@ -298,17 +331,15 @@ impl Player {
         self.gathered_parts.remove(i)
     }
 
-    fn remove_parts(&mut self, n: usize) -> Vec<Card> {
+    fn remove_parts(&mut self, cards_to_remove: &Vec<Card>) -> Vec<Card> {
         if self.escaped {
             panic!("gameplay bug: remove_parts triggered on escaped player");
         }
-        let result = Vec::new();
-        let mut n = n;
-        while !self.gathered_parts.is_empty() && n > 0 {
-            self.remove_part(0);
-            n -= 1;
+        let mut result = Vec::new();
+        for card_to_remove in cards_to_remove {
+            vec_remove_item(&mut self.gathered_parts, card_to_remove).map(|c| result.push(c));
         }
-        result
+        return result;
     }
 
     fn escape(&mut self) -> () {
@@ -366,10 +397,17 @@ enum ActionError {
         initiating_player: bool,
         empty_handed_player: usize,
     },
-    DiscardPileEmpty,
-    NotEnoughCardsToScrap {
-        num_available: u32,
+    CardIsNotInDiscard {
+        card: Card,
+    },
+    WrongNumberOfCardsToScrap {
+        num_specified: u32,
         num_needed: u32,
+    },
+    CardIsNotWithPlayer {
+        initiating_player: bool,
+        player: usize,
+        card: Card,
     },
     EscapeConditionNotSatisfied,
 }
@@ -425,7 +463,7 @@ fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
 impl fmt::Display for ActionError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use ActionError::*;
-        match *self {
+        match self {
             DeckEmpty => write!(f, "the draw deck is empty"),
             PlayerEscaped { escaped_player } => {
                 write!(f, "player {} already escaped", escaped_player)
@@ -434,24 +472,50 @@ impl fmt::Display for ActionError {
                 initiating_player,
                 empty_handed_player,
             } => {
-                if initiating_player {
+                if *initiating_player {
                     write!(f, "you don't have any cards")
                 } else {
                     write!(f, "player {} doesn't have any cards", empty_handed_player)
                 }
             }
-            DiscardPileEmpty => write!(f, "the discard pile is empty"),
-            NotEnoughCardsToScrap {
-                num_available,
+            CardIsNotInDiscard { card } => {
+                write!(f, "the discard pile does not contain the {}", card)
+            }
+            WrongNumberOfCardsToScrap {
+                num_specified,
                 num_needed,
             } => write!(
                 f,
-                "you don't have enough cards (you have {}, {} needed)",
-                num_available, num_needed
+                "you did not offer enough cards ({} offered, {} needed)",
+                num_specified, num_needed
             ),
             EscapeConditionNotSatisfied => write!(f, "you don't have all 4 suits of the same rank"),
+            CardIsNotWithPlayer {
+                initiating_player,
+                player,
+                card,
+            } => {
+                if *initiating_player {
+                    write!(f, "you don't actually have the {}", card)
+                } else {
+                    write!(f, "player {} doesn't actually have {}", player, card)
+                }
+            }
         }
     }
+}
+
+// TODO: since this is inefficient, all places that use this should instead use a different data type
+fn vec_remove_item<T: PartialEq>(v: &mut Vec<T>, to_remove: &T) -> Option<T> {
+    let mut index = None;
+    for (i, elem) in v.iter().enumerate() {
+        if elem == to_remove {
+            index = Some(i);
+            break;
+        }
+    }
+    let index = index?;
+    Some(v.remove(index))
 }
 
 impl Gameplay {
@@ -550,24 +614,38 @@ impl Gameplay {
                     player.receive_part(card);
                 }
             }
-            Scrap => {
-                if self.discard.is_empty() {
-                    return Err(ActionError::DiscardPileEmpty);
+            Scrap {
+                player_cards,
+                for_discard_card,
+            } => {
+                if !self.discard.contains(&for_discard_card) {
+                    return Err(ActionError::CardIsNotInDiscard {
+                        card: for_discard_card,
+                    });
                 }
-                let player = &mut self.players[player_index];
-                if player.gathered_parts.len() < 4 {
-                    return Err(ActionError::NotEnoughCardsToScrap {
-                        num_available: player.gathered_parts.len() as u32,
+                if player_cards.len() != 4 {
+                    return Err(ActionError::WrongNumberOfCardsToScrap {
+                        num_specified: player_cards.len() as u32,
                         num_needed: 4,
                     });
                 }
+                let player = &mut self.players[player_index];
+                for supposedly_player_card in &player_cards {
+                    if !player.gathered_parts.contains(&supposedly_player_card) {
+                        return Err(ActionError::CardIsNotWithPlayer {
+                            initiating_player: true,
+                            player: player_index,
+                            card: *supposedly_player_card,
+                        });
+                    }
+                }
                 if player.can_make_move() {
-                    // for now always choose the first card in discard, but in reality at this point the player
-                    // can choose
-                    let pick_card = self.discard.remove(0);
-                    player.receive_part(pick_card);
-                    let mut scrapped_cards = player.remove_parts(4);
-                    self.discard.append(&mut scrapped_cards);
+                    let taken_from_discard = vec_remove_item(&mut self.discard, &for_discard_card);
+                    taken_from_discard.map(|c| player.receive_part(c));
+                    // remove_parts will remove cards from the player even if they don't have all the parts
+                    // so it's important to pre-check this. also at this point we've modified the discard
+                    let mut cards_taken_from_player = player.remove_parts(&player_cards);
+                    self.discard.append(&mut cards_taken_from_player);
                 }
             }
             Escape => {
