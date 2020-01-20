@@ -156,6 +156,7 @@ enum PlayerAction {
         with_player: usize,
     },
     Steal {
+        card: Card,
         from_player: usize,
     },
     Scrap {
@@ -187,9 +188,28 @@ impl TryFrom<&str> for PlayerAction {
                 .ok_or("to `trade`, specify which player to trade with (e.g. `trade 0`)")?;
             return Ok(Trade { with_player: n });
         } else if s.starts_with("steal") {
-            let n = first_number(&s)
-                .ok_or("to `steal`, specify which player to steal from (e.g. `steal 0`)")?;
-            return Ok(Steal { from_player: n });
+            let action_params_s = &s[5..];
+            match action_params_s
+                .split("from")
+                .collect::<Vec<&str>>()
+                .as_slice()
+            {
+                [card, player] => {
+                    let card = Card::try_from(*card)?;
+                    let player = first_number(*player)
+                        .ok_or(format!("'{}' does not specify a player", player))?;
+                    return Ok(Steal {
+                        from_player: player,
+                        card,
+                    });
+                }
+                _ => {
+                    return Err(String::from(
+                        "to `steal`, specify the card to steal, then `from`, then who to steal \
+                         from, e.g. `steal Ace of Spades from 0`",
+                    ))
+                }
+            }
         } else if s.starts_with("scrap") {
             let action_params_s = &s[5..];
             match action_params_s
@@ -237,7 +257,7 @@ impl PlayerAction {
         - `scavenge` -- inspect 3 parts from the deck, you get to pick 1, the other 2 are discarded
         - `share [player_id]` -- you get 2 new parts from the deck, the other player gets 1
         - `trade [player_id]` -- start a trade with the other player
-        - `steal [player_id]` -- steal a part from the other player
+        - `steal [card] from [player_id]` -- steal a part from the other player
         - `scrap [4 cards you have] for [card in discard]` -- discard 4 parts and pick one card from the discard pile
         - `escape` -- escape the wasteland
         - `skip` -- skip your turn";
@@ -329,6 +349,13 @@ impl Player {
             panic!("gameplay bug: remove_part triggered on escaped player");
         }
         self.gathered_parts.remove(i)
+    }
+
+    fn remove_specific_part(&mut self, c: &Card) -> Option<Card> {
+        if self.escaped {
+            panic!("gameplay bug: remove_part triggered on escaped player");
+        }
+        vec_remove_item(&mut self.gathered_parts, c)
     }
 
     fn remove_parts(&mut self, cards_to_remove: &Vec<Card>) -> Vec<Card> {
@@ -597,21 +624,18 @@ impl Gameplay {
                     }
                 }
             }
-            Steal { from_player } => {
-                self.precondition_player_has_cards(from_player, false)?;
+            Steal { from_player, card } => {
+                self.precondition_player_has_card(from_player, &card, false)?;
                 self.precondition_player_not_escaped(from_player)?;
                 let player = &self.players[player_index];
                 if player.can_make_move() {
-                    // for now we always steal the top card, but in reality at this point the player who is stealing
-                    // can choose the card
-
-                    let card = {
+                    let stolen_card = {
                         let other_player = &mut self.players[from_player];
-                        other_player.remove_part(0)
+                        other_player.remove_specific_part(&card)
                     };
 
                     let player = &mut self.players[player_index];
-                    player.receive_part(card);
+                    stolen_card.map(|c| player.receive_part(c));
                 }
             }
             Scrap {
@@ -629,16 +653,10 @@ impl Gameplay {
                         num_needed: 4,
                     });
                 }
-                let player = &mut self.players[player_index];
                 for supposedly_player_card in &player_cards {
-                    if !player.gathered_parts.contains(&supposedly_player_card) {
-                        return Err(ActionError::CardIsNotWithPlayer {
-                            initiating_player: true,
-                            player: player_index,
-                            card: *supposedly_player_card,
-                        });
-                    }
+                    self.precondition_player_has_card(player_index, &supposedly_player_card, true)?;
                 }
+                let player = &mut self.players[player_index];
                 if player.can_make_move() {
                     let taken_from_discard = vec_remove_item(&mut self.discard, &for_discard_card);
                     taken_from_discard.map(|c| player.receive_part(c));
@@ -716,6 +734,23 @@ impl Gameplay {
             Err(ActionError::PlayerCardsEmpty {
                 empty_handed_player: p,
                 initiating_player,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    fn precondition_player_has_card(
+        &self,
+        p: usize,
+        c: &Card,
+        initiating_player: bool,
+    ) -> Result<(), ActionError> {
+        if !self.players[p].gathered_parts.contains(c) {
+            Err(ActionError::CardIsNotWithPlayer {
+                initiating_player,
+                player: p,
+                card: *c,
             })
         } else {
             Ok(())
