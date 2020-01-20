@@ -124,9 +124,8 @@ impl PlayerAction {
 }
 
 #[derive(Debug)]
-pub struct Player {
-    // TODO stop making this public
-    pub missing_part: Card, // TODO stop making this public
+struct Player {
+    missing_part: Card,
     gathered_parts: Vec<Card>,
     escaped: bool,
     moves_left: Option<u32>,
@@ -194,8 +193,7 @@ impl Player {
         self.escaped = true;
     }
 
-    pub fn can_make_move(&self) -> bool {
-        // TODO stop making this public
+    fn can_make_move(&self) -> bool {
         let has_moves_left = self.moves_left.map_or(true, |x| (x > 0));
         !self.escaped && has_moves_left
     }
@@ -208,8 +206,7 @@ impl Player {
         self.moves_left = self.moves_left.map(|x| x - 1);
     }
 
-    pub fn has_4_parts(&self) -> bool {
-        // TODO stop making this public
+    fn has_4_parts(&self) -> bool {
         let mut num_cards_per_rank = HashMap::new();
         for card in &self.gathered_parts {
             let n = num_cards_per_rank.entry(card.rank).or_insert(0);
@@ -221,8 +218,7 @@ impl Player {
         false
     }
 
-    pub fn has_missing_part(&self) -> bool {
-        // TODO stop making this public
+    fn has_missing_part(&self) -> bool {
         self.gathered_parts.contains(&self.missing_part)
     }
 }
@@ -231,7 +227,7 @@ impl Player {
 pub struct Gameplay {
     draw: Deck,
     discard: Vec<Card>,
-    pub players: Vec<Player>, // TODO: stop exposing this
+    players: Vec<Player>,
 }
 
 #[derive(Debug)]
@@ -361,17 +357,59 @@ fn vec_remove_item<T: PartialEq>(v: &mut Vec<T>, to_remove: &T) -> Option<T> {
     Some(v.remove(index))
 }
 
+pub struct GameResults {
+    pub winners: Vec<usize>,
+    pub escaped_but_not_winner: Vec<usize>,
+    pub stuck: Vec<usize>,
+}
+
 impl Gameplay {
-    pub fn init(num_players: usize) -> Gameplay {
+    pub fn init(num_players: usize) -> (Gameplay, Vec<Card>) {
         let mut missing_parts_deck = Deck::shuffle();
         let mut players = Vec::new();
+        let mut secret_cards = Vec::new();
         for _ in 0..num_players {
-            players.push(Player::init(&mut missing_parts_deck));
+            let player = Player::init(&mut missing_parts_deck);
+            secret_cards.push(player.missing_part);
+            players.push(player);
         }
-        Gameplay {
+        let gameplay = Gameplay {
             players,
             draw: Deck::shuffle(),
             discard: Vec::new(),
+        };
+        (gameplay, secret_cards)
+    }
+
+    pub fn get_num_players(&self) -> usize {
+        self.players.len()
+    }
+
+    pub fn can_player_make_move(&self, p: usize) -> bool {
+        self.players[p].can_make_move()
+    }
+
+    pub fn get_results(&self) -> GameResults {
+        let mut winners = Vec::new();
+        let mut escaped_but_not_winner = Vec::new();
+        let mut stuck = Vec::new();
+
+        for (i, player) in self.players.iter().enumerate() {
+            let has_4_parts = player.has_4_parts();
+            let has_missing_part = player.has_missing_part();
+            if has_4_parts && has_missing_part {
+                winners.push(i);
+            } else if has_4_parts {
+                escaped_but_not_winner.push(i);
+            } else {
+                stuck.push(i);
+            }
+        }
+
+        GameResults {
+            winners,
+            escaped_but_not_winner,
+            stuck,
         }
     }
 

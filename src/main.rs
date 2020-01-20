@@ -20,11 +20,11 @@ fn main() {
         .parse()
         .expect("number of players must be a positive integer");
 
-    let mut gameplay = Gameplay::init(num_players);
-    for (i, player) in gameplay.players.iter().enumerate() {
+    let (mut gameplay, secret_cards) = Gameplay::init(num_players);
+    for (i, secret_card) in secret_cards.iter().enumerate() {
         println!(
             "Player {}, your secret part is {}, don't tell anyone",
-            i, player.missing_part
+            i, secret_card
         )
     }
 
@@ -32,8 +32,8 @@ fn main() {
     let mut quit = false;
     while !quit {
         let mut no_moves_available = true;
-        for i in 0..gameplay.players.len() {
-            if gameplay.players[i].can_make_move() {
+        for i in 0..gameplay.get_num_players() {
+            if gameplay.can_player_make_move(i) {
                 no_moves_available = false;
                 println!("{}", gameplay);
 
@@ -80,28 +80,14 @@ fn main() {
     }
 
     if game_finished {
-        let mut winners = Vec::new();
-        let mut escaped_but_not_winner = Vec::new();
-        let mut stuck = Vec::new();
-
-        for (i, player) in gameplay.players.iter().enumerate() {
-            let has_4_parts = player.has_4_parts();
-            let has_missing_part = player.has_missing_part();
-            if has_4_parts && has_missing_part {
-                winners.push(i);
-            } else if has_4_parts {
-                escaped_but_not_winner.push(i);
-            } else {
-                stuck.push(i);
-            }
-        }
-
-        let winners: Vec<String> = winners.iter().map(|x| x.to_string()).collect();
-        let escaped_but_not_winner: Vec<String> = escaped_but_not_winner
+        let game_res = gameplay.get_results();
+        let winners: Vec<String> = game_res.winners.iter().map(|x| x.to_string()).collect();
+        let escaped_but_not_winner: Vec<String> = game_res
+            .escaped_but_not_winner
             .iter()
             .map(|x| x.to_string())
             .collect();
-        let stuck: Vec<String> = stuck.iter().map(|x| x.to_string()).collect();
+        let stuck: Vec<String> = game_res.stuck.iter().map(|x| x.to_string()).collect();
 
         println!("Winners: {}", winners.join(", "));
         println!(
