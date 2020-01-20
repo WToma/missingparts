@@ -223,14 +223,19 @@ impl Player {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Clone, Copy)]
+pub enum GameState {
+    WaitingForPlayerAction { player: usize },
+    Finished,
+}
+
 pub struct Gameplay {
     draw: Deck,
     discard: Vec<Card>,
     players: Vec<Player>,
+    state: GameState,
 }
 
-#[derive(Debug)]
 pub enum ActionError {
     DeckEmpty,
     PlayerEscaped {
@@ -377,16 +382,9 @@ impl Gameplay {
             players,
             draw: Deck::shuffle(),
             discard: Vec::new(),
+            state: GameState::WaitingForPlayerAction { player: 0 },
         };
         (gameplay, secret_cards)
-    }
-
-    pub fn get_num_players(&self) -> usize {
-        self.players.len()
-    }
-
-    pub fn can_player_make_move(&self, p: usize) -> bool {
-        self.players[p].can_make_move()
     }
 
     pub fn get_results(&self) -> GameResults {
@@ -413,12 +411,24 @@ impl Gameplay {
         }
     }
 
+    pub fn get_state(&self) -> GameState {
+        self.state
+    }
+
     pub fn process_player_action(
-        // TODO stop making this public
         &mut self,
         player_index: usize,
         player_action: PlayerAction,
     ) -> Result<(), ActionError> {
+        if self.state
+            != (GameState::WaitingForPlayerAction {
+                player: player_index,
+            })
+        {
+            // maybe this should return some kind of error? but the consequences aren't dire
+            return Ok(());
+        }
+
         use PlayerAction::*;
         match player_action {
             Scavenge => {
@@ -540,10 +550,11 @@ impl Gameplay {
         }
         self.auto_escape();
         self.players[player_index].decrease_remaining_moves();
+        self.move_to_next_player();
         Ok(())
     }
 
-    fn auto_escape(&mut self) -> () {
+    fn auto_escape(&mut self) {
         let mut escaped = false;
         for player in &mut self.players {
             if player.has_4_parts() && player.has_missing_part() {
@@ -556,12 +567,33 @@ impl Gameplay {
         }
     }
 
-    fn trigger_endgame(&mut self) -> () {
+    fn trigger_endgame(&mut self) {
         for player in &mut self.players {
             if !player.escaped {
                 player.set_remaining_moves(1);
             }
         }
+    }
+
+    fn move_to_next_player(&mut self) {
+        use GameState::*;
+        let last_player = match self.state {
+            WaitingForPlayerAction { player } => player,
+            Finished => return,
+        };
+        let num_players = self.players.len();
+
+        let mut new_state = Finished;
+        for i in 1..num_players {
+            let player_index = (last_player + i) % num_players;
+            if self.players[player_index].can_make_move() {
+                new_state = WaitingForPlayerAction {
+                    player: player_index,
+                };
+            }
+        }
+
+        self.state = new_state;
     }
 
     fn precondition_draw_nonempty(&self) -> Result<(), ActionError> {

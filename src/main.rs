@@ -28,18 +28,15 @@ fn main() {
         )
     }
 
-    let mut game_finished = false;
     let mut quit = false;
     while !quit {
-        let mut no_moves_available = true;
-        for i in 0..gameplay.get_num_players() {
-            if gameplay.can_player_make_move(i) {
-                no_moves_available = false;
+        match gameplay.get_state() {
+            GameState::WaitingForPlayerAction { player } => {
                 println!("{}", gameplay);
 
                 let mut player_made_valid_move = false;
                 while !player_made_valid_move {
-                    println!("Player {}, what's your move?", i);
+                    println!("Player {}, what's your move?", player);
                     let mut player_action_str = String::new();
                     io::stdin()
                         .read_line(&mut player_action_str)
@@ -52,7 +49,7 @@ fn main() {
 
                     let player_action = PlayerAction::try_from(player_action_str);
                     match player_action {
-                        Ok(action) => match gameplay.process_player_action(i, action) {
+                        Ok(action) => match gameplay.process_player_action(player, action) {
                             Ok(_) => player_made_valid_move = true,
                             Err(err) => println!(
                                 "`{}` is not possible at this time because {}",
@@ -68,18 +65,11 @@ fn main() {
                     }
                 }
             }
-            if quit {
-                break;
-            }
-        }
-
-        if no_moves_available {
-            game_finished = true;
-            quit = true;
+            GameState::Finished => break,
         }
     }
 
-    if game_finished {
+    if gameplay.get_state() == GameState::Finished {
         let game_res = gameplay.get_results();
         let winners: Vec<String> = game_res.winners.iter().map(|x| x.to_string()).collect();
         let escaped_but_not_winner: Vec<String> = game_res
