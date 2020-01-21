@@ -419,6 +419,9 @@ impl Gameplay {
             if has_4_parts && has_missing_part {
                 winners.push(i);
             } else if has_4_parts {
+                // check with Andy what should happen if the endgame is triggered, and some players
+                // satisfy the escape condition, but they themselves didn't make an escape move. do they count
+                // as escaped or not?
                 escaped_but_not_winner.push(i);
             } else {
                 stuck.push(i);
@@ -445,6 +448,7 @@ impl Gameplay {
         match player_action {
             Scavenge => {
                 self.precondition_waiting_for_player_action(player_index)?;
+                // question for Andy: should we re-shuffle the discard pile into draw here
                 self.precondition_draw_nonempty()?;
                 let player = &mut self.players[player_index];
                 if player.can_make_move() {
@@ -479,6 +483,7 @@ impl Gameplay {
             }
             Share { with_player } => {
                 self.precondition_waiting_for_player_action(player_index)?;
+                // question for Andy: should we re-shuffle the discard pile into draw here
                 self.precondition_draw_nonempty()?;
                 self.precondition_player_not_escaped(with_player)?;
 
@@ -577,6 +582,9 @@ impl Gameplay {
                 }
                 if !player.escaped {
                     // not using the can_make_move check here: escape is possible without moves
+                    // check with Andy what should happen if the endgame is triggered, and some players
+                    // satisfy the escape condition, but they themselves didn't make an escape move. do they count
+                    // as escaped or not?
                     player.escape();
                     self.trigger_endgame();
                 }
