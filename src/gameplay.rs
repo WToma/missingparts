@@ -6,6 +6,9 @@ use std::fmt;
 #[derive(Debug)]
 pub enum PlayerAction {
     Scavenge,
+    FinishScavenge {
+        card: Card,
+    },
     Share {
         with_player: usize,
     },
@@ -223,9 +226,15 @@ impl Player {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq)]
 pub enum GameState {
-    WaitingForPlayerAction { player: usize },
+    WaitingForPlayerAction {
+        player: usize,
+    },
+    WaitingForScavengeComplete {
+        player: usize,
+        scavenged_cards: Vec<Card>,
+    },
     Finished,
 }
 
@@ -258,6 +267,12 @@ pub enum ActionError {
         card: Card,
     },
     EscapeConditionNotSatisfied,
+    NotPlayersTurn {
+        player: usize,
+    },
+    CardWasNotScavenged {
+        card: Card,
+    },
 }
 
 impl fmt::Display for Gameplay {
@@ -345,6 +360,12 @@ impl fmt::Display for ActionError {
                     write!(f, "player {} doesn't actually have {}", player, card)
                 }
             }
+            NotPlayersTurn { player } => write!(f, "it is not player {}'s turn", player),
+            CardWasNotScavenged { card } => write!(
+                f,
+                "{} was not in the scavenged cards, pick a valid one",
+                card
+            ),
         }
     }
 }
@@ -411,8 +432,8 @@ impl Gameplay {
         }
     }
 
-    pub fn get_state(&self) -> GameState {
-        self.state
+    pub fn get_state(&self) -> &GameState {
+        &self.state
     }
 
     pub fn process_player_action(
@@ -420,30 +441,44 @@ impl Gameplay {
         player_index: usize,
         player_action: PlayerAction,
     ) -> Result<(), ActionError> {
-        if self.state
-            != (GameState::WaitingForPlayerAction {
-                player: player_index,
-            })
-        {
-            // maybe this should return some kind of error? but the consequences aren't dire
-            return Ok(());
-        }
-
         use PlayerAction::*;
         match player_action {
             Scavenge => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_draw_nonempty()?;
                 let player = &mut self.players[player_index];
                 if player.can_make_move() {
-                    let mut deck_cards = self.draw.remove_top(3);
+                    let deck_cards = self.draw.remove_top(3);
 
-                    // for now always pick the first card, but at this point we should prompt the player to select
-                    let player_card = deck_cards.remove(0);
-                    player.receive_part(player_card);
-                    self.discard.append(&mut deck_cards);
+                    self.state = GameState::WaitingForScavengeComplete {
+                        player: player_index,
+                        scavenged_cards: deck_cards,
+                    };
+
+                    // need to return early here, so that we don't process the post-move actions just yet
+                    return Ok(());
                 }
             }
+            FinishScavenge { card } => {
+                let mut scavenged_cards = match self.state {
+                    GameState::WaitingForScavengeComplete {
+                        player,
+                        ref mut scavenged_cards,
+                    } if player == player_index => scavenged_cards,
+                    _ => {
+                        return Err(ActionError::NotPlayersTurn {
+                            player: player_index,
+                        })
+                    }
+                };
+
+                let valid_picked_card = vec_remove_item(&mut scavenged_cards, &card)
+                    .ok_or(ActionError::CardWasNotScavenged { card })?;
+                self.players[player_index].receive_part(valid_picked_card);
+                self.discard.append(&mut scavenged_cards);
+            }
             Share { with_player } => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_draw_nonempty()?;
                 self.precondition_player_not_escaped(with_player)?;
 
@@ -459,6 +494,7 @@ impl Gameplay {
                 }
             }
             Trade { with_player } => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_player_has_cards(player_index, true)?;
                 self.precondition_player_has_cards(with_player, false)?;
                 self.precondition_player_not_escaped(with_player)?;
@@ -490,6 +526,7 @@ impl Gameplay {
                 }
             }
             Steal { from_player, card } => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_player_has_card(from_player, &card, false)?;
                 self.precondition_player_not_escaped(from_player)?;
                 let player = &self.players[player_index];
@@ -507,6 +544,7 @@ impl Gameplay {
                 player_cards,
                 for_discard_card,
             } => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 if !self.discard.contains(&for_discard_card) {
                     return Err(ActionError::CardIsNotInDiscard {
                         card: for_discard_card,
@@ -532,6 +570,7 @@ impl Gameplay {
                 }
             }
             Escape => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 let player = &mut self.players[player_index];
                 if !player.has_4_parts() {
                     return Err(ActionError::EscapeConditionNotSatisfied);
@@ -543,10 +582,11 @@ impl Gameplay {
                 }
             }
             CheatGetCards { cards } => {
+                self.precondition_waiting_for_player_action(player_index)?;
                 let player = &mut self.players[player_index];
                 player.receive_parts(cards);
             }
-            Skip => (),
+            Skip => self.precondition_waiting_for_player_action(player_index)?,
         }
         self.auto_escape();
         self.players[player_index].decrease_remaining_moves();
@@ -579,6 +619,10 @@ impl Gameplay {
         use GameState::*;
         let last_player = match self.state {
             WaitingForPlayerAction { player } => player,
+            WaitingForScavengeComplete {
+                player,
+                scavenged_cards: _,
+            } => player,
             Finished => return,
         };
         let num_players = self.players.len();
@@ -641,6 +685,13 @@ impl Gameplay {
             })
         } else {
             Ok(())
+        }
+    }
+
+    fn precondition_waiting_for_player_action(&self, p: usize) -> Result<(), ActionError> {
+        match self.state {
+            GameState::WaitingForPlayerAction { player } if player == p => Ok(()),
+            _ => Err(ActionError::NotPlayersTurn { player: p }),
         }
     }
 }
