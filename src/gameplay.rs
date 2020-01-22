@@ -4,6 +4,12 @@ use std::convert::TryFrom;
 use std::fmt;
 
 #[derive(Debug)]
+pub struct TradeOffer {
+    offered: Card,
+    in_exchange: Card,
+}
+
+#[derive(Debug)]
 pub enum PlayerAction {
     Scavenge,
     FinishScavenge {
@@ -14,6 +20,7 @@ pub enum PlayerAction {
     },
     Trade {
         with_player: usize,
+        offer: TradeOffer,
     },
     Steal {
         card: Card,
@@ -30,6 +37,33 @@ pub enum PlayerAction {
     Skip,
 }
 
+/// Split `s` by the separators in `separators`, in the order they are defined.
+///
+/// # Examples
+///
+/// ```
+/// split_in_ord("trade 0 offering 2 of Hearts for Ace of Spades", &["offering", "for"])
+/// ```
+fn split_in_ord<'a, 'b>(s: &'a str, separators: &'b [&str]) -> Vec<&'a str> {
+    let mut parts = Vec::new();
+    let mut s = &s[0..];
+    for sep in separators {
+        let sep_len: usize = sep.len();
+        match s.find(sep) {
+            Some(0) => s = &s[sep_len..],
+            Some(pos) => {
+                parts.push(&s[..pos]);
+                s = &s[(pos + sep_len)..];
+            }
+            None => break,
+        }
+    }
+    if s.len() > 0 {
+        parts.push(s);
+    }
+    parts
+}
+
 impl TryFrom<&str> for PlayerAction {
     type Error = String;
 
@@ -44,9 +78,18 @@ impl TryFrom<&str> for PlayerAction {
                 .ok_or("to `share`, specify which player to share with (e.g. `share 0`)")?;
             return Ok(Share { with_player: n });
         } else if s.starts_with("trade") {
-            let n = first_number(&s)
-                .ok_or("to `trade`, specify which player to trade with (e.g. `trade 0`)")?;
-            return Ok(Trade { with_player: n });
+            let action_params = &s[5..];
+            match split_in_ord(action_params, &["offering", "for"]).as_slice() {
+                [with_player, offered, in_exchange] => {
+                    let with_player = first_number(*with_player).ok_or(format!("{} is not a valid player", with_player))?;
+                    let offered = Card::try_from(*offered)?;
+                    let in_exchange = Card::try_from(*in_exchange)?;
+
+                    return Ok(Trade { with_player, offer: TradeOffer { offered, in_exchange }});
+                },
+                _ => return Err(String::from("to `trade`, specify which player to trade with, the card offered, and \
+                what you expect in return (e.g. `trade 0 offering [your card] for [player 0's card]`)")),
+            }
         } else if s.starts_with("steal") {
             let action_params_s = &s[5..];
             match action_params_s
@@ -498,7 +541,10 @@ impl Gameplay {
                     other_player.receive_part(other_player_card);
                 }
             }
-            Trade { with_player } => {
+            Trade {
+                with_player,
+                offer: _,
+            } => {
                 self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_player_has_cards(player_index, true)?;
                 self.precondition_player_has_cards(with_player, false)?;
