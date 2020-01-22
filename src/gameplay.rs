@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TradeOffer {
     offered: Card,
     in_exchange: Card,
@@ -278,6 +278,12 @@ pub enum GameState {
         player: usize,
         scavenged_cards: Vec<Card>,
     },
+    WaitingForTradeConfirmation {
+        initiating_player: usize,
+        trading_with_player: usize,
+        waiting_for_confirmation_from: usize,
+        offer: TradeOffer,
+    },
     Finished,
 }
 
@@ -543,37 +549,54 @@ impl Gameplay {
             }
             Trade {
                 with_player,
-                offer: _,
+                offer:
+                    TradeOffer {
+                        offered,
+                        in_exchange,
+                    },
             } => {
                 self.precondition_waiting_for_player_action(player_index)?;
-                self.precondition_player_has_cards(player_index, true)?;
-                self.precondition_player_has_cards(with_player, false)?;
+                self.precondition_player_has_card(player_index, &offered, true)?;
+                self.precondition_player_has_card(with_player, &in_exchange, false)?;
                 self.precondition_player_not_escaped(with_player)?;
                 let player = &self.players[player_index];
                 if player.can_make_move() {
-                    // for now we always trade the top cards. but in reality at this point both players should
-                    // be able to select which card to trade, if any, and if there is no agreement, they can
-                    // abort the trade, in which case the action completes without changing the game state
-                    // (check with Andy if they should be able to retry in this case)
-                    // this weird dance is to avoid having 2 elements borrowed mut at the same time, which the borrow
-                    // checker does not like
-                    let player_card = {
-                        let player = &mut self.players[player_index];
-                        player.remove_part(0)
-                    };
-                    let other_player_card = {
-                        let other_player = &mut self.players[with_player];
-                        other_player.remove_part(0)
+                    // // for now we always trade the top cards. but in reality at this point both players should
+                    // // be able to select which card to trade, if any, and if there is no agreement, they can
+                    // // abort the trade, in which case the action completes without changing the game state
+                    // // (check with Andy if they should be able to retry in this case)
+                    // // this weird dance is to avoid having 2 elements borrowed mut at the same time, which the borrow
+                    // // checker does not like
+                    // let player_card = {
+                    //     let player = &mut self.players[player_index];
+                    //     player.remove_part(0)
+                    // };
+                    // let other_player_card = {
+                    //     let other_player = &mut self.players[with_player];
+                    //     other_player.remove_part(0)
+                    // };
+
+                    // {
+                    //     let player = &mut self.players[player_index];
+                    //     player.receive_part(other_player_card);
+                    // }
+                    // {
+                    //     let other_player = &mut self.players[with_player];
+                    //     other_player.receive_part(player_card);
+                    // }
+                    self.state = GameState::WaitingForTradeConfirmation {
+                        initiating_player: player_index,
+                        trading_with_player: with_player,
+                        waiting_for_confirmation_from: with_player,
+                        offer: TradeOffer {
+                            offered: offered,
+                            in_exchange: in_exchange,
+                        },
                     };
 
-                    {
-                        let player = &mut self.players[player_index];
-                        player.receive_part(other_player_card);
-                    }
-                    {
-                        let other_player = &mut self.players[with_player];
-                        other_player.receive_part(player_card);
-                    }
+                    // need to return early here to prevent the turn from advancing. we can only advance one the
+                    // trade is complete (or rejected).
+                    return Ok(());
                 }
             }
             Steal { from_player, card } => {
@@ -673,11 +696,11 @@ impl Gameplay {
         use GameState::*;
         let last_player = match self.state {
             WaitingForPlayerAction { player } => player,
-            WaitingForScavengeComplete {
-                player,
-                scavenged_cards: _,
-            } => player,
+            WaitingForScavengeComplete { player, .. } => player,
             Finished => return,
+            WaitingForTradeConfirmation {
+                initiating_player, ..
+            } => initiating_player,
         };
         let num_players = self.players.len();
 

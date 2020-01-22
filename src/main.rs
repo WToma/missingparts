@@ -111,6 +111,18 @@ fn main() {
                     .err()
                     .map(|err| println!("{}", err));
             }
+            GameState::WaitingForTradeConfirmation {
+                initiating_player,
+                trading_with_player,
+                waiting_for_confirmation_from,
+                offer:
+                    TradeOffer {
+                        offered,
+                        in_exchange,
+                    },
+            } => {
+                panic!("not implemented");
+            }
             GameState::Finished => break,
         };
     }
