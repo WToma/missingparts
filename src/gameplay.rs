@@ -5,8 +5,8 @@ use std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub struct TradeOffer {
-    offered: Card,
-    in_exchange: Card,
+    pub offered: Card,
+    pub in_exchange: Card,
 }
 
 #[derive(Debug)]
@@ -22,6 +22,8 @@ pub enum PlayerAction {
         with_player: usize,
         offer: TradeOffer,
     },
+    TradeAccept,
+    TradeReject,
     Steal {
         card: Card,
         from_player: usize,
@@ -206,13 +208,6 @@ impl Player {
         }
     }
 
-    fn remove_part(&mut self, i: usize) -> Card {
-        if self.escaped {
-            panic!("gameplay bug: remove_part triggered on escaped player");
-        }
-        self.gathered_parts.remove(i)
-    }
-
     fn remove_specific_part(&mut self, c: &Card) -> Option<Card> {
         if self.escaped {
             panic!("gameplay bug: remove_part triggered on escaped player");
@@ -281,7 +276,6 @@ pub enum GameState {
     WaitingForTradeConfirmation {
         initiating_player: usize,
         trading_with_player: usize,
-        waiting_for_confirmation_from: usize,
         offer: TradeOffer,
     },
     Finished,
@@ -298,10 +292,6 @@ pub enum ActionError {
     DeckEmpty,
     PlayerEscaped {
         escaped_player: usize,
-    },
-    PlayerCardsEmpty {
-        initiating_player: bool,
-        empty_handed_player: usize,
     },
     CardIsNotInDiscard {
         card: Card,
@@ -375,16 +365,6 @@ impl fmt::Display for ActionError {
             DeckEmpty => write!(f, "the draw deck is empty"),
             PlayerEscaped { escaped_player } => {
                 write!(f, "player {} already escaped", escaped_player)
-            }
-            PlayerCardsEmpty {
-                initiating_player,
-                empty_handed_player,
-            } => {
-                if *initiating_player {
-                    write!(f, "you don't have any cards")
-                } else {
-                    write!(f, "player {} doesn't have any cards", empty_handed_player)
-                }
             }
             CardIsNotInDiscard { card } => {
                 write!(f, "the discard pile does not contain the {}", card)
@@ -561,33 +541,9 @@ impl Gameplay {
                 self.precondition_player_not_escaped(with_player)?;
                 let player = &self.players[player_index];
                 if player.can_make_move() {
-                    // // for now we always trade the top cards. but in reality at this point both players should
-                    // // be able to select which card to trade, if any, and if there is no agreement, they can
-                    // // abort the trade, in which case the action completes without changing the game state
-                    // // (check with Andy if they should be able to retry in this case)
-                    // // this weird dance is to avoid having 2 elements borrowed mut at the same time, which the borrow
-                    // // checker does not like
-                    // let player_card = {
-                    //     let player = &mut self.players[player_index];
-                    //     player.remove_part(0)
-                    // };
-                    // let other_player_card = {
-                    //     let other_player = &mut self.players[with_player];
-                    //     other_player.remove_part(0)
-                    // };
-
-                    // {
-                    //     let player = &mut self.players[player_index];
-                    //     player.receive_part(other_player_card);
-                    // }
-                    // {
-                    //     let other_player = &mut self.players[with_player];
-                    //     other_player.receive_part(player_card);
-                    // }
                     self.state = GameState::WaitingForTradeConfirmation {
                         initiating_player: player_index,
                         trading_with_player: with_player,
-                        waiting_for_confirmation_from: with_player,
                         offer: TradeOffer {
                             offered: offered,
                             in_exchange: in_exchange,
@@ -597,6 +553,75 @@ impl Gameplay {
                     // need to return early here to prevent the turn from advancing. we can only advance one the
                     // trade is complete (or rejected).
                     return Ok(());
+                }
+            }
+            TradeReject => {
+                let initiating_player =
+                    self.precondition_waiting_for_trade_confirmation(player_index)?;
+
+                // (check with Andy if they should be able to negotiate, of if the player should lose their turn in
+                // this case)
+                // give the player whose trade was rejected another action
+                self.state = GameState::WaitingForPlayerAction {
+                    player: initiating_player,
+                };
+                return Ok(());
+            }
+            TradeAccept => {
+                match &self.state {
+                    GameState::WaitingForTradeConfirmation {
+                        initiating_player,
+                        trading_with_player,
+                        offer,
+                    } if player_index == *trading_with_player => {
+                        // just double check -- should not fail at this point since we checked when we accepted the
+                        // offer into the game state
+                        self.precondition_player_has_card(
+                            *initiating_player,
+                            &offer.offered,
+                            true,
+                        )?;
+                        self.precondition_player_has_card(
+                            *trading_with_player,
+                            &offer.in_exchange,
+                            false,
+                        )?;
+
+                        // this weird dance is to avoid having 2 elements borrowed mut at the same time, which the borrow
+                        // checker does not like
+                        let player_card = {
+                            let player = &mut self.players[*initiating_player];
+                            player.remove_specific_part(&offer.offered)
+                        }
+                        .ok_or(ActionError::CardIsNotWithPlayer {
+                            initiating_player: false,
+                            player: *initiating_player,
+                            card: offer.offered,
+                        })?;
+                        let other_player_card = {
+                            let other_player = &mut self.players[*trading_with_player];
+                            other_player.remove_specific_part(&offer.in_exchange)
+                        }
+                        .ok_or(ActionError::CardIsNotWithPlayer {
+                            initiating_player: false,
+                            player: *trading_with_player,
+                            card: offer.in_exchange,
+                        })?;
+
+                        {
+                            let player = &mut self.players[*initiating_player];
+                            player.receive_part(other_player_card);
+                        }
+                        {
+                            let other_player = &mut self.players[*trading_with_player];
+                            other_player.receive_part(player_card);
+                        }
+                    }
+                    _ => {
+                        return Err(ActionError::NotPlayersTurn {
+                            player: player_index,
+                        })
+                    }
                 }
             }
             Steal { from_player, card } => {
@@ -733,21 +758,6 @@ impl Gameplay {
         }
     }
 
-    fn precondition_player_has_cards(
-        &self,
-        p: usize,
-        initiating_player: bool,
-    ) -> Result<(), ActionError> {
-        if self.players[p].gathered_parts.is_empty() {
-            Err(ActionError::PlayerCardsEmpty {
-                empty_handed_player: p,
-                initiating_player,
-            })
-        } else {
-            Ok(())
-        }
-    }
-
     fn precondition_player_has_card(
         &self,
         p: usize,
@@ -768,6 +778,17 @@ impl Gameplay {
     fn precondition_waiting_for_player_action(&self, p: usize) -> Result<(), ActionError> {
         match self.state {
             GameState::WaitingForPlayerAction { player } if player == p => Ok(()),
+            _ => Err(ActionError::NotPlayersTurn { player: p }),
+        }
+    }
+
+    fn precondition_waiting_for_trade_confirmation(&self, p: usize) -> Result<usize, ActionError> {
+        match self.state {
+            GameState::WaitingForTradeConfirmation {
+                initiating_player,
+                trading_with_player,
+                ..
+            } if trading_with_player == p => Ok(initiating_player),
             _ => Err(ActionError::NotPlayersTurn { player: p }),
         }
     }

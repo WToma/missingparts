@@ -114,14 +114,45 @@ fn main() {
             GameState::WaitingForTradeConfirmation {
                 initiating_player,
                 trading_with_player,
-                waiting_for_confirmation_from,
                 offer:
                     TradeOffer {
                         offered,
                         in_exchange,
                     },
             } => {
-                panic!("not implemented");
+                let trading_with_player = *trading_with_player;
+                println!(
+                    "Player {}! Player {} wants to trade. Here's the deal:
+                They give you {}
+                You give them {}.
+                Deal?",
+                    trading_with_player, initiating_player, offered, in_exchange
+                );
+
+                let action: PlayerAction;
+                loop {
+                    let mut action_str = String::new();
+                    io::stdin()
+                        .read_line(&mut action_str)
+                        .expect("failed to read action");
+                    match &action_str.to_lowercase()[..] {
+                        "yes" | "yup" | "ok" => {
+                            action = PlayerAction::TradeAccept;
+                            break;
+                        }
+                        "no" | "nope" | "no way" => {
+                            action = PlayerAction::TradeReject;
+                            break;
+                        }
+                        _ => println!("please just say 'yes' or 'no'"),
+                    }
+                }
+                // ignore the error except printing it. this action cannot fail right now. Really it would be nicer if
+                // this was in the loop, but that becomes a huge pain because of borrowing
+                gameplay
+                    .process_player_action(trading_with_player, action)
+                    .err()
+                    .map(|err| println!("{}", err));
             }
             GameState::Finished => break,
         };
