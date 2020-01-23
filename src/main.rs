@@ -135,7 +135,7 @@ fn main() {
                     io::stdin()
                         .read_line(&mut action_str)
                         .expect("failed to read action");
-                    match &action_str.to_lowercase()[..] {
+                    match action_str.to_lowercase().trim() {
                         "yes" | "yup" | "ok" => {
                             action = PlayerAction::TradeAccept;
                             break;
