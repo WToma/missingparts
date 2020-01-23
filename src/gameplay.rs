@@ -161,7 +161,7 @@ impl PlayerAction {
         let s = "The following are the valid actions:
         - `scavenge` -- inspect 3 parts from the deck, you get to pick 1, the other 2 are discarded
         - `share [player_id]` -- you get 2 new parts from the deck, the other player gets 1
-        - `trade [player_id]` -- start a trade with the other player
+        - `trade [player_id] offering [your card] for [their card]` -- start a trade with the other player
         - `steal [card] from [player_id]` -- steal a part from the other player
         - `scrap [4 cards you have] for [card in discard]` -- discard 4 parts and pick one card from the discard pile
         - `escape` -- escape the wasteland
