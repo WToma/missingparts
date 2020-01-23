@@ -400,6 +400,23 @@ impl fmt::Display for ActionError {
 }
 
 // TODO: since this is inefficient, all places that use this should instead use a different data type
+/// Removes an element equal to `to_remove` from `v`, returning the removed element. Returns `None` and leaves `v`
+/// intact if `to_remove` is not in `v`.
+///
+/// # Examples
+///
+/// If the element to remove exists:
+/// ```
+/// let removed = vec_remove_item(vec![1, 2, 3], 2);
+/// assert_eq(v, vec![1, 3]);
+/// assert_eq(removed, Some(2));
+/// ```
+///
+/// If the element to remove does not exist:
+/// ```
+/// let removed = vec_remove_item(vec!['a', 'c'], 'b');
+/// assert_eq(removed, None);
+/// ```
 fn vec_remove_item<T: PartialEq>(v: &mut Vec<T>, to_remove: &T) -> Option<T> {
     let mut index = None;
     for (i, elem) in v.iter().enumerate() {
