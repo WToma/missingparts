@@ -44,9 +44,11 @@ pub enum PlayerAction {
 /// # Examples
 ///
 /// ```
-/// split_in_ord("trade 0 offering 2 of Hearts for Ace of Spades", &["offering", "for"])
+/// # use missingparts::gameplay::*;
+/// let parts = split_in_ord("trade 0 offering 2 of Hearts for Ace of Spades", &["offering", "for"]);
+/// assert_eq!(parts, ["trade 0 ", " 2 of Hearts ", " Ace of Spades"]);
 /// ```
-fn split_in_ord<'a, 'b>(s: &'a str, separators: &'b [&str]) -> Vec<&'a str> {
+pub fn split_in_ord<'a, 'b>(s: &'a str, separators: &'b [&str]) -> Vec<&'a str> {
     let mut parts = Vec::new();
     let mut s = &s[0..];
     for sep in separators {
@@ -407,17 +409,21 @@ impl fmt::Display for ActionError {
 ///
 /// If the element to remove exists:
 /// ```
-/// let removed = vec_remove_item(vec![1, 2, 3], 2);
-/// assert_eq(v, vec![1, 3]);
-/// assert_eq(removed, Some(2));
+/// # use missingparts::gameplay::*;
+/// let mut v = vec![1, 2, 3];
+/// let removed = vec_remove_item(&mut v, &2);
+/// assert_eq!(v, vec![1, 3]);
+/// assert_eq!(removed, Some(2));
 /// ```
 ///
 /// If the element to remove does not exist:
 /// ```
-/// let removed = vec_remove_item(vec!['a', 'c'], 'b');
-/// assert_eq(removed, None);
+/// # use missingparts::gameplay::*;
+/// let mut v = vec!['a', 'c'];
+/// let removed = vec_remove_item(&mut v, &'b');
+/// assert_eq!(removed, None);
 /// ```
-fn vec_remove_item<T: PartialEq>(v: &mut Vec<T>, to_remove: &T) -> Option<T> {
+pub fn vec_remove_item<T: PartialEq>(v: &mut Vec<T>, to_remove: &T) -> Option<T> {
     let mut index = None;
     for (i, elem) in v.iter().enumerate() {
         if elem == to_remove {
