@@ -188,3 +188,80 @@ impl Deck {
         self.shuffled_cards.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use Rank::*;
+    use Suit::*;
+
+    #[test]
+    fn card_parse_ok() {
+        assert_eq!(
+            Card::try_from("Ace of Spades").unwrap(),
+            Card {
+                suit: Spades,
+                rank: Ace,
+            },
+        );
+
+        assert_eq!(
+            Card::try_from("4 of Hearts").unwrap(),
+            Card {
+                suit: Hearts,
+                rank: Four,
+            },
+        );
+
+        assert_eq!(
+            Card::try_from("k c").unwrap(),
+            Card {
+                suit: Clubs,
+                rank: King,
+            },
+        );
+
+        assert_eq!(
+            Card::try_from("5 d").unwrap(),
+            Card {
+                suit: Diamonds,
+                rank: Five,
+            },
+        );
+    }
+
+    #[test]
+    fn card_parse_fail() {
+        let invalid_card_strings = vec![
+            "notacard",
+            "not a card",
+            "14 of Hearts",
+            "King of Mushrooms",
+        ];
+
+        for invalid_card_string in invalid_card_strings {
+            let parse_result = Card::try_from(invalid_card_string);
+            assert!(
+                parse_result.is_err(),
+                "Result for '{}' was not an error, got: {}",
+                invalid_card_string,
+                parse_result.unwrap(),
+            );
+        }
+    }
+
+    #[test]
+    fn card_parse_reflexive() {
+        for suit in &Suit::arr() {
+            for rank in &Rank::arr() {
+                let card = Card {
+                    suit: *suit,
+                    rank: *rank,
+                };
+                let card_str = card.to_string();
+                assert_eq!(Card::try_from(card_str.as_str()).unwrap(), card);
+            }
+        }
+    }
+}
