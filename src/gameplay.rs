@@ -191,7 +191,10 @@ struct Player {
 
 impl Player {
     fn init(missing_parts_deck: &mut Deck) -> Player {
-        let missing_part = missing_parts_deck.remove_index(0);
+        let missing_part = *(missing_parts_deck
+            .remove_top(0)
+            .first()
+            .expect("the missing parts deck was empty!"));
         Player {
             missing_part,
             gathered_parts: Vec::new(),

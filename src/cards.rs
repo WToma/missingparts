@@ -2,7 +2,11 @@ use rand::Rng;
 use std::convert::TryFrom;
 use std::fmt;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+/// The possible suits of cards.
+///
+/// Note: for programming purposes, `Suit` should be treated as a scalar, therefore the `Clone` and `Copy`
+/// traits are derived.
 pub enum Suit {
     Clubs,
     Diamonds,
@@ -11,6 +15,7 @@ pub enum Suit {
 }
 
 impl Suit {
+    /// Returns an array of all possible card suits.
     pub fn arr() -> [Suit; 4] {
         use Suit::*;
         [Clubs, Diamonds, Hearts, Spades]
@@ -54,6 +59,10 @@ impl TryFrom<&str> for Suit {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+/// The possible ranks of cards.
+///
+/// Note: for programming purposes, `Rank` should be treated as a scalar, therefore the `Clone` and `Copy`
+/// traits are derived.
 pub enum Rank {
     Ace,
     Two,
@@ -71,6 +80,10 @@ pub enum Rank {
 }
 
 impl Rank {
+    /// Returns an array of all possible card ranks in their natural order.
+    ///
+    /// Note: depending on the game the cards are used for, the strength order may be different
+    /// from the index order in the returned array. E.g. in some games `Ace > King`, or `Ace > Ten > King`.
     pub fn arr() -> [Rank; 13] {
         use Rank::*;
         [
@@ -124,7 +137,11 @@ impl TryFrom<&str> for Rank {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+/// A single piece of card in a 52-piece French deck.
+///
+/// Note: for programming purposes, `Card` should be treated as a scalar, therefore the `Clone` and `Copy`
+/// traits are derived.
 pub struct Card {
     pub suit: Suit,
     pub rank: Rank,
@@ -178,11 +195,23 @@ impl TryFrom<&str> for Card {
 }
 
 #[derive(Debug)]
+/// A deck of `Card`s.
+///
+/// As long as the deck was created using the [`shuffle` method](struct.Deck.html#method.shuffle) and
+/// no cards were manually added, the deck will remain unique and in random order.
 pub struct Deck {
     shuffled_cards: Vec<Card>,
 }
 
 impl Deck {
+    /// Returns a pre-shuffled deck of all 52 cards.
+    ///
+    /// # Examples
+    /// ```
+    /// # use missingparts::cards::*;
+    /// let deck = Deck::shuffle();
+    /// assert_eq!(deck.len(), 52);
+    /// ```
     pub fn shuffle() -> Deck {
         let mut cards: Vec<Card> = Vec::new();
         for suit in &Suit::arr() {
@@ -199,6 +228,33 @@ impl Deck {
         }
     }
 
+    /// Removes the top at most `n` cards from this deck, and returns them.
+    ///
+    /// # Examples
+    /// ```
+    /// # fn all_unique(cards: &Vec<Card>) -> bool {
+    /// #    use std::collections::HashSet;
+    /// #    let mut card_set = HashSet::new();
+    /// #    for card in cards {
+    /// #        card_set.insert(*card);
+    /// #    }
+    /// #    card_set.len() == cards.len()
+    /// # }
+    /// # use missingparts::cards::*;
+    /// let mut deck = Deck::shuffle();
+    ///
+    /// let mut first_removed = deck.remove_top(10);
+    /// assert_eq!(first_removed.len(), 10);
+    /// assert_eq!(deck.len(), 42);
+    ///
+    /// let mut second_removed = deck.remove_top(50);
+    /// assert_eq!(second_removed.len(), 42);
+    /// assert!(!deck.non_empty());
+    ///
+    /// let mut all_cards = first_removed;
+    /// all_cards.append(&mut second_removed);
+    /// assert!(all_unique(&all_cards));
+    /// ```
     pub fn remove_top(&mut self, n: usize) -> Vec<Card> {
         use std::cmp::min;
         let mut result = Vec::new();
@@ -208,15 +264,28 @@ impl Deck {
         result
     }
 
-    pub fn remove_index(&mut self, i: usize) -> Card {
-        // panics if i is out of bounds -- use Option?
-        self.shuffled_cards.remove(i)
-    }
-
+    /// Returns whether the deck has cards in it (`true`) or not (`false`).
+    ///
+    /// # Examples
+    /// ```
+    /// # use missingparts::cards::*;
+    /// let mut deck = Deck::shuffle();
+    /// assert!(deck.non_empty());
+    /// deck.remove_top(60);
+    /// assert!(!deck.non_empty());
+    /// ```
     pub fn non_empty(&self) -> bool {
         !self.shuffled_cards.is_empty()
     }
 
+    /// Returns the number of cards currently in the deck
+    ///
+    /// # Examples
+    /// ```
+    /// # use missingparts::cards::*;
+    /// let deck = Deck::shuffle();
+    /// assert_eq!(deck.len(), 52);
+    /// ```
     pub fn len(&self) -> usize {
         self.shuffled_cards.len()
     }
@@ -291,6 +360,40 @@ mod tests {
                 let card_str = card.to_string();
                 assert_eq!(Card::try_from(card_str.as_str()).unwrap(), card);
             }
+        }
+    }
+
+    // deck tests
+    #[test]
+    fn remove_top_removes_correct_cards() {
+        let mut deck = create_unshuffled_deck();
+        assert_eq!(
+            *(deck.remove_top(1).first().unwrap()),
+            Card::try_from("Ace of Clubs").unwrap()
+        );
+
+        assert_eq!(
+            deck.remove_top(2),
+            vec![
+                Card::try_from("2 c").unwrap(),
+                Card::try_from("3 c").unwrap()
+            ],
+        )
+    }
+
+    fn create_unshuffled_deck() -> Deck {
+        let mut unshuffled_cards = Vec::new();
+        for suit in &Suit::arr() {
+            for rank in &Rank::arr() {
+                unshuffled_cards.push(Card {
+                    suit: *suit,
+                    rank: *rank,
+                });
+            }
+        }
+
+        Deck {
+            shuffled_cards: unshuffled_cards,
         }
     }
 }
