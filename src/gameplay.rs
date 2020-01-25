@@ -39,6 +39,14 @@ pub enum PlayerAction {
     Skip,
 }
 
+fn first_number(s: &str) -> Option<usize> {
+    s.split_whitespace()
+        .map(|ss| ss.parse())
+        .filter(|pr| pr.is_ok())
+        .map(|pr| pr.expect("we should have filtered errors already"))
+        .next()
+}
+
 /// Split `s` by the separators in `separators`, in the order they are defined.
 ///
 /// # Examples

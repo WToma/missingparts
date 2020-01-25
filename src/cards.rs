@@ -17,13 +17,33 @@ impl Suit {
     }
 }
 
+impl fmt::Display for Suit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl TryFrom<&str> for Suit {
     type Error = ();
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         use Suit::*;
-        let first_char = s.trim().chars().next().ok_or(())?;
-        match first_char.to_ascii_lowercase() {
+
+        // try parsing the canonical name first
+        let s = s.trim().to_ascii_lowercase();
+        for member in &Suit::arr() {
+            if member.to_string().as_str().to_ascii_lowercase() == s {
+                return Ok(*member);
+            }
+        }
+
+        // if that fails, accept the first character
+        if s.len() > 1 {
+            return Err(());
+        }
+
+        let first_char = s.chars().next().ok_or(())?;
+        match first_char {
             'c' => Ok(Clubs),
             'd' => Ok(Diamonds),
             'h' => Ok(Hearts),
@@ -59,12 +79,10 @@ impl Rank {
     }
 }
 
-pub fn first_number(s: &str) -> Option<usize> {
-    s.split_whitespace()
-        .map(|ss| ss.parse())
-        .filter(|pr| pr.is_ok())
-        .map(|pr| pr.expect("we should have filtered errors already"))
-        .next()
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl TryFrom<&str> for Rank {
@@ -73,21 +91,36 @@ impl TryFrom<&str> for Rank {
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         use Rank::*;
 
-        let first_char = s.chars().next().ok_or(())?;
-        match first_char.to_ascii_lowercase() {
-            'a' => Ok(Ace),
-            'j' => Ok(Jack),
-            'q' => Ok(Queen),
-            'k' => Ok(King),
-            _ => {
-                let n: usize = first_number(s).ok_or(())?;
-                if n >= 1 && n <= 13 {
-                    Ok(Rank::arr()[n - 1])
-                } else {
-                    Err(())
-                }
+        // try the canonical name first
+        let s = s.trim().to_ascii_lowercase();
+        for member in &Rank::arr() {
+            if member.to_string().as_str().to_ascii_lowercase() == s {
+                return Ok(*member);
             }
         }
+
+        // if that fails, for the figure cards accept the first letter of the name
+        if s.len() == 1 {
+            let first_char = s.chars().next().ok_or(())?;
+
+            if !first_char.is_digit(10) {
+                return match first_char.to_ascii_lowercase() {
+                    'a' => Ok(Ace),
+                    'j' => Ok(Jack),
+                    'q' => Ok(Queen),
+                    'k' => Ok(King),
+                    _ => Err(()),
+                };
+            }
+        }
+
+        // otherwise try to parse as number and pick the number
+        let n: usize = s.parse().map_err(|_| ())?;
+        return if n >= 1 && n <= 13 {
+            Ok(Rank::arr()[n - 1])
+        } else {
+            Err(())
+        };
     }
 }
 
@@ -99,7 +132,7 @@ pub struct Card {
 
 impl fmt::Display for Card {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?} of {:?}", self.rank, self.suit)
+        write!(f, "{} of {}", self.rank, self.suit)
     }
 }
 
@@ -233,12 +266,8 @@ mod tests {
 
     #[test]
     fn card_parse_fail() {
-        let invalid_card_strings = vec![
-            "notacard",
-            "not a card",
-            "14 of Hearts",
-            "King of Mushrooms",
-        ];
+        let invalid_card_strings =
+            vec!["notacard", "not a card", "14 of Hearts", "King of Donkeys"];
 
         for invalid_card_string in invalid_card_strings {
             let parse_result = Card::try_from(invalid_card_string);
