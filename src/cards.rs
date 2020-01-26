@@ -2,11 +2,11 @@ use rand::Rng;
 use std::convert::TryFrom;
 use std::fmt;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 /// The possible suits of cards.
 ///
 /// Note: for programming purposes, `Suit` should be treated as a scalar, therefore the `Clone` and `Copy`
 /// traits are derived.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Suit {
     Clubs,
     Diamonds,
@@ -58,11 +58,11 @@ impl TryFrom<&str> for Suit {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 /// The possible ranks of cards.
 ///
 /// Note: for programming purposes, `Rank` should be treated as a scalar, therefore the `Clone` and `Copy`
 /// traits are derived.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Rank {
     Ace,
     Two,
@@ -194,11 +194,11 @@ impl TryFrom<&str> for Card {
     }
 }
 
-#[derive(Debug)]
 /// A deck of `Card`s.
 ///
 /// As long as the deck was created using the [`shuffle` method](struct.Deck.html#method.shuffle) and
 /// no cards were manually added, the deck will remain unique and in random order.
+#[derive(Debug)]
 pub struct Deck {
     shuffled_cards: Vec<Card>,
 }
