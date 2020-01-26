@@ -723,9 +723,7 @@ mod tests {
         // with the appropriate error
 
         // All turn actions:
-        // - wrong state
-        // - wrong player
-        // - player escaped
+        // see: test_turn_actions_preconditions
 
         // Scavenge:
         // - empty deck
@@ -779,6 +777,12 @@ mod tests {
     }
 
     #[test]
+    fn skip_escaped_out_of_move_players() {
+        // test that players who have escaped our out of move are not scheduled for a turn
+        unimplemented!();
+    }
+
+    #[test]
     fn auto_escape() {
         // test the auto-escape functionality during the game and at the end
         unimplemented!();
@@ -793,15 +797,90 @@ mod tests {
         unimplemented!();
     }
 
+    #[test]
+    fn test_turn_action_preconditions() {
+        for action in turn_actions() {
+            test_turn_action_precondition_correct_player(action);
+            test_turn_action_precondition_correct_state(action);
+        }
+        // The following conditions:
+        // - player escaped
+        // - player is out of moves
+        // are covered by `skip_escaped_out_of_move_players`.
+    }
+
+    fn test_turn_action_precondition_correct_player(action: &str) {
+        test_precondition(
+            action,
+            |mut g| {
+                g.state = GameState::WaitingForPlayerAction { player: 1 };
+            },
+            ActionError::NotPlayersTurn { player: 0 },
+        )
+    }
+
+    fn test_turn_action_precondition_correct_state(action: &str) {
+        test_precondition(
+            action,
+            |mut g| {
+                g.state = GameState::WaitingForScavengeComplete {
+                    player: 0,
+                    scavenged_cards: Vec::new(),
+                };
+            },
+            ActionError::NotPlayersTurn { player: 0 },
+        )
+    }
+
+    fn test_precondition<F: Fn(&mut Gameplay)>(
+        action: &str,
+        game_setup: F,
+        expected_action_error: ActionError,
+    ) {
+        let action = PlayerAction::try_from(action).unwrap();
+        let mut game = basic_2_player_with_cards();
+        game_setup(&mut game);
+        assert_eq!(
+            game.process_player_action(0, action).unwrap_err(),
+            expected_action_error,
+        );
+    }
+
+    // turn action definitions:
+    // these all assume the `basic_2_player_with_cards` setup, and that it's player 0's turn.
+    static SCAVENGE: &'static str = "scavenge";
+    static TRADE: &'static str = "trade 1 offering 2 h for 3 h";
+    static STEAL: &'static str = "steal 3 h from 1";
+    static SHARE: &'static str = "share with 1";
+    static SCRAP: &'static str = "share scrap 2 h, 2 c, 2 d, a d for q c";
+    static ESCAPE: &'static str = "escape";
+    static SKIP: &'static str = "skip";
+    static CHEAT_GET_CARDS: &'static str = "conjure 10 d";
+    fn turn_actions() -> Vec<&'static str> {
+        vec![
+            SCAVENGE,
+            TRADE,
+            STEAL,
+            SHARE,
+            SCRAP,
+            ESCAPE,
+            SKIP,
+            CHEAT_GET_CARDS,
+        ]
+    }
+
     fn basic_2_player_with_cards() -> Gameplay {
-        basic_game(&vec![vec!["2 h", "2 c", "2 d"], vec!["3 h", "3 c", "3 d"]])
+        basic_game(&vec![
+            vec!["2 h", "2 c", "2 d", "a d"],
+            vec!["3 h", "3 c", "3 d", "a c"],
+        ])
     }
 
     fn basic_game(card_strs_per_player: &Vec<Vec<&str>>) -> Gameplay {
         Gameplay {
             players: players_with_cards(card_strs_per_player),
             draw: Deck::shuffle(),
-            discard: Vec::new(),
+            discard: vec![Card::try_from("q c").unwrap()],
             state: GameState::WaitingForPlayerAction { player: 0 },
         }
     }

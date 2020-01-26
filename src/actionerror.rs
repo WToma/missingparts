@@ -8,7 +8,7 @@ use std::fmt;
 /// In general these can be prevented by providing a user experience that prevents the user from attempting an invalid
 /// action. If an action error is received the player must try to give a new action, since the game state had not
 /// advanced.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ActionError {
     /// There are no cards in the draw pile (for example when trying to use
     /// [`Scavenge`](enum.PlayerAction.html#variant.Scavenge)).
