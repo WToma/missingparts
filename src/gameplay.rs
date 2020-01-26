@@ -2,432 +2,11 @@
 //!
 //! The [`Gameplay`](struct.Gameplay.html) type is the main way to interact with the game.
 
+use crate::actionerror::*;
 use crate::cards::*;
+use crate::playeraction::*;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::fmt;
-
-/// The parameters of a trade offer in a `Trade` action during the game.
-///
-/// For example, if _player A_ has cards `[4 of Clubs, 2 of Hearts]`, and _player B_ has `[6 of Diamonds, Ace of
-/// Spades]`, and it's _player A_'s turn, a valid trade offer _player A_ could make to _player B_ would be `offered=4
-/// of Clubs, in_exchange=Ace of Spades`.
-#[derive(Debug, PartialEq)]
-pub struct TradeOffer {
-    /// This is the card that the initiator of the play is willing to give up.
-    pub offered: Card,
-
-    // This is the card required from the other party in the trade.
-    pub in_exchange: Card,
-}
-
-/// The various actions that a player can make during their turn, and also some actions that can be used to complete
-/// a multi-part action in a turn.
-///
-/// Actions can be categorized roughly into 2 types:
-/// - a _turn action_ can be taken at the beginnig of a player's turn.
-/// - a _completing action_ can be taken to complete a turn action requiring a multi-step intreaction, such as
-///   scavenging (pick which card to keep) or trading (the offer must be accepted or rejected).
-///
-/// Unless otherwise indicated for a variant, it's a turn action. For completing actions the variant-level documentation
-/// will indicate for which [`GameState`](enum.GameState.html) they are valid.
-///
-/// The actions can be used with [`Gameplay::process_player_action`](struct.Gameplay.html#method.process_player_action).
-/// In general only the player whose turn it is according to the game state can make actions. There are some exceptions,
-/// this is indicated on the action-level documentation.
-///
-/// As a convenience, turn actions can be parsed from a `&str` using `try_from` (see the `std::convert::TryFrom`). See
-/// examples for each action of a valid string that can be parsed into that action. If the parsing fails, a human
-/// readable (English) error message is returned that should explain what the problem is, and what would be a valid
-/// version of the action. This can be shown on the user interface.
-#[derive(Debug, PartialEq)]
-pub enum PlayerAction {
-    /// Pick one of the top 3 cards from the draw pile.
-    ///
-    /// Preconditions:
-    /// - the draw pile must not be empty.
-    ///
-    /// Effect: the game state changes to
-    /// [`WaitingForScavengeComplete`](enum.GameState.html#variant.WaitingForScavengeComplete), which indicates which
-    /// cards have been drawn from the draw pile. To complete the turn, use [`FinishScavenge`](#variant.FinishScavenge).
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(PlayerAction::try_from("scavenge").unwrap(), Scavenge);
-    /// ```
-    Scavenge,
-
-    /// Pick which scavenged cards to keep.
-    ///
-    /// Preconditions:
-    /// - the game state must be [`WaitingForScavengeComplete`](enum.GameState.html#variant.WaitingForScavengeComplete)
-    /// and the `card` specified in this action must be one of the cards in the state.
-    ///
-    /// Effect: the `card` specified in this action will move to the player's hand, the other cards from the game state,
-    /// if any, move to the discard pile. The turn of the player completes.
-    FinishScavenge {
-        /// The card that the player is picking to keep.
-        card: Card,
-    },
-
-    /// Get the top 2 cards from the draw pile, and another player gets one card.
-    ///
-    /// Preconditions:
-    /// - the draw pile must not be empty
-    /// - the specified other player must not have escaped
-    ///
-    /// Effect: the top 2 cards, (or 1, if the draw pile only has 1) will move to the player making the turn, and 1 card
-    /// (if the draw pile is still not empty) will move to `with_player`. The turn of the player making the action
-    /// completes.
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(PlayerAction::try_from("share 1").unwrap(), Share { with_player: 1 });
-    /// ```
-    Share {
-        /// The other player, who should receive one card.
-        with_player: usize,
-    },
-
-    /// Swap cards with another player, depending on mutual agreement.
-    ///
-    /// Preconditions:
-    /// - both players must have the cards specified in the `offer`.
-    /// - the specified other player must not have escaped
-    ///
-    /// Effect: the game state goes to
-    /// [`WaitingForTradeConfirmation`](enum.GameState.html#variant.WaitingForTradeConfirmation), which indicates who
-    /// needs to approve the transaction, and what was the offer made. The turn can be completed by
-    /// [`TradeAccept`](#variant.TradeAccept) or [`TradeReject`](#variant.TradeReject).
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::*;
-    /// # use missingparts::cards::*;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(
-    ///     PlayerAction::try_from("trade 1 offering King of Clubs for Ace of Spades").unwrap(),
-    ///     Trade {
-    ///         with_player: 1,
-    ///         offer: TradeOffer {
-    ///             offered: Card::try_from("King of Clubs").unwrap(),
-    ///             in_exchange: Card::try_from("Ace of Spades").unwrap(),
-    ///         },
-    ///     },
-    /// );
-    /// ```
-    Trade {
-        /// The other player to trade with.
-        with_player: usize,
-
-        /// The offer made in the trade.
-        offer: TradeOffer,
-    },
-
-    /// Accept the trade offer
-    ///
-    /// Preconditions:
-    /// - the game state is [`WaitingForTradeConfirmation`](enum.GameState.html#variant.WaitingForTradeConfirmation),
-    /// and the action is made by the player indicated in the state.
-    ///
-    /// Effect:
-    /// The player who initiated the trade gets the exchange card specified in the offer, and the player who is
-    /// accepting the trade gets the offered card from the initiating player. (Both players lose the other card, i.e no
-    /// new card enters the players' collective hand.) The initiating player's turn completes.
-    TradeAccept,
-
-    /// Reject the trade offer
-    ///
-    ///
-    /// Preconditions:
-    /// - the game state is [`WaitingForTradeConfirmation`](enum.GameState.html#variant.WaitingForTradeConfirmation),
-    /// and the action is made by the player indicated in the state.
-    ///
-    /// Effect: the game state goes back to
-    /// [`WaitingForPlayerAction`](enum.GameState.html#variant.WaitingForPlayerAction). So the player who initated the
-    /// trade that got rejected gets to pick another action.
-    TradeReject,
-
-    /// Steal a card from another player
-    ///
-    /// Preconditions:
-    /// - the specified other player has the `card`.
-    /// - the specified other player must not have escaped
-    ///
-    /// Effect: the specified other player loses `card`, and the player making this action receives it. The turn of the
-    /// player making the action completes.
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use missingparts::cards::*;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(
-    ///     PlayerAction::try_from("steal Ace of Spades from 1").unwrap(),
-    ///     Steal {
-    ///         from_player: 1,
-    ///         card: Card::try_from("Ace of Spades").unwrap(),
-    ///     },
-    /// );
-    /// ```
-    Steal {
-        /// The card to be stolen from the other player.
-        card: Card,
-
-        /// The player to steal from.
-        from_player: usize,
-    },
-
-    /// Discard cards in exchange for an item from the discard pile
-    ///
-    /// Preconditions:
-    /// - the player is in possession of the cards specified in `player_cards`.
-    /// - the discard pile contains `for_discard_card`.
-    ///
-    /// Effect: the player gets `for_discard_card` (and it gets removed from the discard pile). The player loses the
-    /// cards specified in `player_cards` (and those cards end up in the discard pile). The player's turn completes.
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use missingparts::cards::*;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(
-    ///     // 'h' is short for 'of Hearts'
-    ///     PlayerAction::try_from("scrap 2 h, 3 h, 4 h, 5 h for Ace of Spades").unwrap(),
-    ///     Scrap {
-    ///         player_cards: vec![
-    ///             Card::try_from("2 h").unwrap(),
-    ///             Card::try_from("3 h").unwrap(),
-    ///             Card::try_from("4 h").unwrap(),
-    ///             Card::try_from("5 h").unwrap(),
-    ///         ],
-    ///         for_discard_card: Card::try_from("Ace of Spades").unwrap(),
-    ///     },
-    /// );
-    /// ```
-    Scrap {
-        /// The cards that the player is going to discard.
-        player_cards: Vec<Card>,
-
-        /// The card that the player will get from discard.
-        for_discard_card: Card,
-    },
-
-    /// Escape from the game
-    ///
-    /// Preconditions:
-    /// - the player has satisfied the escape condition (has all 4 suits of the same rank, e.g. `[2 H, 2 C, 2 D, 2 S]`)
-    ///
-    /// Effect: the player is moved to 'escaped' status. The player will not be able to make any moves or be eligible
-    /// for `Trade`, `Steal`, `Share` actions from other players. The player's turn completes.
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(PlayerAction::try_from("escape").unwrap(), Escape);
-    /// ```
-    Escape,
-
-    /// Skip a turn
-    ///
-    /// Effect: the player's turn completes.
-    ///
-    /// Note: this action is provided so that the game cannot get stuck. (Example: only one player has not escaped,
-    /// draw pile is empty, and the player does not have enough cards to scrap, and they cannot escape yet.) I don't
-    /// think it ever provides strategic advantage to skip a turn (unless assisting another player in a meta-game).
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(PlayerAction::try_from("skip").unwrap(), Skip);
-    /// ```
-    Skip,
-
-    /// Cheat, and gets some cards from outside the main game resources
-    ///
-    /// Effect: the player receives the cards specified in `cards`.
-    ///
-    /// Note: tis action is provided for gameplay testing. Game runners should ensure that this action is not used
-    /// by non-test players. After using this action the player gets another action. Using this action introduces
-    /// duplicate cards into the game.
-    ///
-    /// Parsing example:
-    /// ```
-    /// # use missingparts::gameplay::PlayerAction;
-    /// # use missingparts::cards::*;
-    /// # use std::convert::TryFrom;
-    /// # use PlayerAction::*;
-    /// assert_eq!(
-    ///     // 'h' is short for 'of Hearts', 'a d' is short for 'Ace of Diamonds'
-    ///     PlayerAction::try_from("conjure 2 h, a d").unwrap(),
-    ///     CheatGetCards {
-    ///         cards: vec![
-    ///             Card::try_from("2 h").unwrap(),
-    ///             Card::try_from("Ace of Diamonds").unwrap(),
-    ///         ],
-    ///     },
-    /// );
-    /// ```
-    CheatGetCards { cards: Vec<Card> },
-}
-
-fn first_number(s: &str) -> Option<usize> {
-    s.split_whitespace()
-        .map(|ss| ss.parse())
-        .filter(|pr| pr.is_ok())
-        .map(|pr| pr.expect("we should have filtered errors already"))
-        .next()
-}
-
-/// Split `s` by the separators in `separators`, in the order they are defined.
-///
-/// # Examples
-///
-/// ```
-/// # use missingparts::gameplay::*;
-/// let parts = split_in_ord("trade 0 offering 2 of Hearts for Ace of Spades", &["offering", "for"]);
-/// assert_eq!(parts, ["trade 0 ", " 2 of Hearts ", " Ace of Spades"]);
-/// ```
-pub fn split_in_ord<'a, 'b>(s: &'a str, separators: &'b [&str]) -> Vec<&'a str> {
-    let mut parts = Vec::new();
-    let mut s = &s[0..];
-    for sep in separators {
-        let sep_len: usize = sep.len();
-        match s.find(sep) {
-            Some(0) => s = &s[sep_len..],
-            Some(pos) => {
-                parts.push(&s[..pos]);
-                s = &s[(pos + sep_len)..];
-            }
-            None => break,
-        }
-    }
-    if s.len() > 0 {
-        parts.push(s);
-    }
-    parts
-}
-
-impl TryFrom<&str> for PlayerAction {
-    type Error = String;
-
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        use PlayerAction::*;
-
-        let s = s.trim().to_lowercase();
-        if s.starts_with("scavenge") {
-            return Ok(Scavenge);
-        } else if s.starts_with("share") {
-            let n = first_number(&s)
-                .ok_or("to `share`, specify which player to share with (e.g. `share 0`)")?;
-            return Ok(Share { with_player: n });
-        } else if s.starts_with("trade") {
-            let action_params = &s[5..];
-            match split_in_ord(action_params, &["offering", "for"]).as_slice() {
-                [with_player, offered, in_exchange] => {
-                    let with_player = first_number(*with_player).ok_or(format!("{} is not a valid player", with_player))?;
-                    let offered = Card::try_from(*offered)?;
-                    let in_exchange = Card::try_from(*in_exchange)?;
-
-                    return Ok(Trade { with_player, offer: TradeOffer { offered, in_exchange }});
-                },
-                _ => return Err(String::from("to `trade`, specify which player to trade with, the card offered, and \
-                what you expect in return (e.g. `trade 0 offering [your card] for [player 0's card]`)")),
-            }
-        } else if s.starts_with("steal") {
-            let action_params_s = &s[5..];
-            match action_params_s
-                .split("from")
-                .collect::<Vec<&str>>()
-                .as_slice()
-            {
-                [card, player] => {
-                    let card = Card::try_from(*card)?;
-                    let player = first_number(*player)
-                        .ok_or(format!("'{}' does not specify a player", player))?;
-                    return Ok(Steal {
-                        from_player: player,
-                        card,
-                    });
-                }
-                _ => {
-                    return Err(String::from(
-                        "to `steal`, specify the card to steal, then `from`, then who to steal \
-                         from, e.g. `steal Ace of Spades from 0`",
-                    ))
-                }
-            }
-        } else if s.starts_with("scrap") {
-            let action_params_s = &s[5..];
-            match action_params_s
-                .split("for")
-                .collect::<Vec<&str>>()
-                .as_slice()
-            {
-                [player_cards, for_discard_card] => {
-                    let player_cards = player_cards
-                        .split(&[',', ';'][..])
-                        .map(Card::try_from)
-                        .collect::<Result<Vec<Card>, String>>()?;
-                    let for_discard_card = Card::try_from(*for_discard_card)?;
-                    return Ok(Scrap {
-                        player_cards,
-                        for_discard_card,
-                    });
-                }
-                _ => return Err(String::from(
-                    "to `scrap`, specify the cards to scrap, then `for`, then a card to get \
-                     from discard, e.g. \
-                     `scrap 2 of Hearts, 3 of Hearts, 4 of Hearts, 5 of Hearts for Ace of Spades`",
-                )),
-            }
-        } else if s.starts_with("escape") {
-            return Ok(Escape);
-        } else if s.starts_with("conjure") {
-            let cards = s[7..]
-                .split(&[',', ';'][..])
-                .map(Card::try_from)
-                .collect::<Result<Vec<Card>, String>>()?;
-            return Ok(CheatGetCards { cards });
-        } else if s.starts_with("skip") {
-            return Ok(Skip);
-        }
-
-        let first_word = s.split_whitespace().next().unwrap_or(&s);
-        Err(format!("'{}' is not a valid action", first_word))
-    }
-}
-
-impl PlayerAction {
-    /// Returns a short summary of the actions that the player can make. Not context aware, i.e. it will mention actions
-    /// that may not be available to the player in the current gameplay situation.
-    pub fn example_actions() -> String {
-        let s = "The following are the valid actions:
-        - `scavenge` -- inspect 3 parts from the deck, you get to pick 1, the other 2 are discarded
-        - `share [player_id]` -- you get 2 new parts from the deck, the other player gets 1
-        - `trade [player_id] offering [your card] for [their card]` -- start a trade with the other player
-        - `steal [card] from [player_id]` -- steal a part from the other player
-        - `scrap [4 cards you have] for [card in discard]` -- discard 4 parts and pick one card from the discard pile
-        - `escape` -- escape the wasteland
-        - `skip` -- skip your turn";
-
-        String::from(s)
-    }
-}
 
 #[derive(Debug)]
 struct Player {
@@ -576,77 +155,6 @@ pub struct Gameplay {
     state: GameState,
 }
 
-/// If the action specified in [`process_player_action`](struct.Gameplay.html#method.process_player_action) cannot be
-/// completed, this type describes why. These roughly reflect the possible precondition failures described in the
-/// [`PlayerAction`](enum.PlayerAction.html) instance docs.
-///
-/// In general these can be prevented by providing a user experience that prevents the user from attempting an invalid
-/// action. If an action error is received the player must try to give a new action, since the game state had not
-/// advanced.
-#[derive(Debug)]
-pub enum ActionError {
-    /// There are no cards in the draw pile (for example when trying to use
-    /// [`Scavenge`](enum.PlayerAction.html#variant.Scavenge)).
-    DeckEmpty,
-
-    /// The specified other player (e.g when trying to use [`Share`](enum.PlayerAction.html#variant.Share) or
-    /// [`Trade`](enum.PlayerAction.html#variant.Trade), etc) had already escaped.
-    PlayerEscaped {
-        /// Who was the other player who's already escaped.
-        escaped_player: usize,
-    },
-
-    /// When using [`Scrap`](enum.PlayerAction.html#variant.Scrap), the player tried to pick a card from the discard pile that is not actually there.
-    CardIsNotInDiscard {
-        /// The card that the player tried to pick from discard pile, but it isn't actually there.
-        card: Card,
-    },
-
-    /// When using [`Scrap`](enum.PlayerAction.html#variant.Scrap), the player specified `num_specified` cards, but
-    /// exactly `num_needed` is needed to complete the scrap.
-    WrongNumberOfCardsToScrap {
-        /// How many cards the player tried to scrap.
-        num_specified: u32,
-
-        /// Exactly how many cards there must be in a scrap action.
-        num_needed: u32,
-    },
-
-    /// When trying to use an action that requires a specific card to be in the possession of a player (e.g.
-    /// [`Trade`](enum.PlayerAction.html#variant.Trade)) the card was actually not with that player.
-    CardIsNotWithPlayer {
-        /// Whether the player who did not have the required card was the same player as the one initiating the action.
-        /// (This is useful to provide a more natural error message, by being able to say "you" instead of "player
-        /// XYZ").
-        initiating_player: bool,
-
-        /// The player who did not have the required card.
-        player: usize,
-
-        /// The card that was supposed to be with `player`, but was not.
-        card: Card,
-    },
-
-    /// The player tried to [`Escape`](enum.PlayerAction.html#variant.Escape), but the escape condition was not
-    /// satisfied. (The player did not have all 4 suits of the same rank.)
-    EscapeConditionNotSatisfied,
-
-    /// A player treid to make an action out of their turn, or tried to use an action not appropriate for the current
-    /// game state (e.g. tried to accept a trade when the game was not expecting a trade confirmation, or was trying
-    /// to scavenge when the game was in expecting a trade confirmation).
-    NotPlayersTurn {
-        /// The player who tried to make the invalid move.
-        player: usize,
-    },
-
-    /// When trying to [`FinishScavenge`](enum.PlayerAction.html#variant.FinishScavenge), the card specified in the
-    /// action was not actually one of the cards scavenged.
-    CardWasNotScavenged {
-        /// The card that the player wanted to keep, but wasn't actually in the scavenged cards.
-        card: Card,
-    },
-}
-
 impl fmt::Display for Gameplay {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (i, player) in self.players.iter().enumerate() {
@@ -689,47 +197,6 @@ fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
     }
 
     fmt::Result::Ok(())
-}
-
-impl fmt::Display for ActionError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use ActionError::*;
-        match self {
-            DeckEmpty => write!(f, "the draw deck is empty"),
-            PlayerEscaped { escaped_player } => {
-                write!(f, "player {} already escaped", escaped_player)
-            }
-            CardIsNotInDiscard { card } => {
-                write!(f, "the discard pile does not contain the {}", card)
-            }
-            WrongNumberOfCardsToScrap {
-                num_specified,
-                num_needed,
-            } => write!(
-                f,
-                "you did not offer enough cards ({} offered, {} needed)",
-                num_specified, num_needed
-            ),
-            EscapeConditionNotSatisfied => write!(f, "you don't have all 4 suits of the same rank"),
-            CardIsNotWithPlayer {
-                initiating_player,
-                player,
-                card,
-            } => {
-                if *initiating_player {
-                    write!(f, "you don't actually have the {}", card)
-                } else {
-                    write!(f, "player {} doesn't actually have {}", player, card)
-                }
-            }
-            NotPlayersTurn { player } => write!(f, "it is not player {}'s turn", player),
-            CardWasNotScavenged { card } => write!(
-                f,
-                "{} was not in the scavenged cards, pick a valid one",
-                card
-            ),
-        }
-    }
 }
 
 // TODO: since this is inefficient, all places that use this should instead use a different data type
@@ -1242,5 +709,123 @@ impl Gameplay {
             } if trading_with_player == p => Ok(initiating_player),
             _ => Err(ActionError::NotPlayersTurn { player: p }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::convert::TryFrom;
+
+    #[test]
+    fn preconditions() {
+        // test that for each precondition of each action, if the precondition is not satisfied, the action fails
+        // with the appropriate error
+
+        // All turn actions:
+        // - wrong state
+        // - wrong player
+        // - player escaped
+
+        // Scavenge:
+        // - empty deck
+
+        // FinishScavenge:
+        // - wrong state
+        // - wrong player
+        // - wrong card
+
+        // Trade
+        // - wrong card this player
+        // - wrong card other player
+        // - other player escaped
+        // - trade with self
+
+        // TradeAccept
+        // - wrong state
+        // - wrong player
+
+        // TradeReject
+        // - wrong state
+        // - wrong player
+
+        // Share
+        // - deck empty
+        // - other player escaped
+        // - share with self
+
+        // Steal
+        // - wrong card other player
+        // - other player escaped
+
+        // Scrap
+        // - wrong number of cards
+        // - duplicate cards
+        // - discard empty
+
+        // Escape
+        // - escape condition not satisfied
+
+        unimplemented!();
+
+        // test for invalid player indexes in trade, share, steal
+        unimplemented!();
+    }
+
+    #[test]
+    fn transitions() {
+        // test the transitions & effects for each action (valid only)
+        unimplemented!();
+    }
+
+    #[test]
+    fn auto_escape() {
+        // test the auto-escape functionality during the game and at the end
+        unimplemented!();
+
+        // also test the countdown mechanism
+        unimplemented!();
+    }
+
+    #[test]
+    fn get_results() {
+        // test get_results function
+        unimplemented!();
+    }
+
+    fn basic_2_player_with_cards() -> Gameplay {
+        basic_game(&vec![vec!["2 h", "2 c", "2 d"], vec!["3 h", "3 c", "3 d"]])
+    }
+
+    fn basic_game(card_strs_per_player: &Vec<Vec<&str>>) -> Gameplay {
+        Gameplay {
+            players: players_with_cards(card_strs_per_player),
+            draw: Deck::shuffle(),
+            discard: Vec::new(),
+            state: GameState::WaitingForPlayerAction { player: 0 },
+        }
+    }
+
+    fn empty_deck() -> Deck {
+        let mut deck = Deck::shuffle();
+        deck.remove_top(52);
+        deck
+    }
+
+    fn players_with_cards(card_strs_per_player: &Vec<Vec<&str>>) -> Vec<Player> {
+        let mut players = Vec::new();
+        for card_strs in card_strs_per_player {
+            let mut cards = Vec::new();
+            for card_str in card_strs {
+                cards.push(Card::try_from(*card_str).unwrap());
+            }
+            players.push(Player {
+                missing_part: Card::try_from("Ace of Spades").unwrap(),
+                gathered_parts: cards,
+                escaped: false,
+                moves_left: None,
+            });
+        }
+        players
     }
 }
