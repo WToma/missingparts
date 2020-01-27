@@ -738,10 +738,10 @@ mod tests {
         // All turn actions:
         // see: test_turn_actions_preconditions
 
-        // Scavenge:
+        // Scavenge
         test_precondition_empty_deck(SCAVENGE);
 
-        // FinishScavenge:
+        // FinishScavenge
         test_precondition_completion_wrong_state(PlayerAction::FinishScavenge { card: c("q c") });
         test_precondition(
             1,                                              // player 1
@@ -795,12 +795,22 @@ mod tests {
         );
 
         // TradeAccept
-        // - wrong state
-        // - wrong player
+        test_precondition_completion_wrong_state(PlayerAction::TradeAccept);
+        test_precondition(
+            1,                                                   // player 1
+            PlayerAction::TradeAccept,                           // trying to finish a trade
+            |mut g| g.state = state_trading(1, 0, "3 h", "2 h"), // that they started themselves
+            ActionError::NotPlayersTurn { player: 1 },
+        );
 
         // TradeReject
-        // - wrong state
-        // - wrong player
+        test_precondition_completion_wrong_state(PlayerAction::TradeReject);
+        test_precondition(
+            1,                                                   // player 1
+            PlayerAction::TradeReject,                           // trying to finish a trade
+            |mut g| g.state = state_trading(1, 0, "3 h", "2 h"), // that they started themselves
+            ActionError::NotPlayersTurn { player: 1 },
+        );
 
         // Share
         test_precondition_empty_deck(SHARE);
@@ -997,6 +1007,22 @@ mod tests {
         GameState::WaitingForScavengeComplete {
             player: player,
             scavenged_cards: cards,
+        }
+    }
+
+    fn state_trading(
+        initiating_player: usize,
+        trading_with_player: usize,
+        offering_str: &str,
+        in_exchange_str: &str,
+    ) -> GameState {
+        GameState::WaitingForTradeConfirmation {
+            initiating_player,
+            trading_with_player,
+            offer: TradeOffer {
+                offered: c(offering_str),
+                in_exchange: c(in_exchange_str),
+            },
         }
     }
 
