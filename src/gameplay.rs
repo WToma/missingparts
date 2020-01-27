@@ -966,6 +966,10 @@ mod tests {
             |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])), //      the scavenge unearths these cards
             state_scavenged(0, &["5 d", "6 d", "7 d"]),
         );
+
+        // the player does not get any cards yet
+        assert_player_does_not_have_cards(&game_after_scavenge, 0, &["5 d", "6 d", "7 d"]);
+
         // FinishScavenge
         let game_after_scavenge = test_state_transition_from(
             0,                             //                          then the same player
@@ -1031,7 +1035,9 @@ mod tests {
             state_trading(0, 1, "2 h", "3 h"), //                   after which the game is waiting for 1 to confirm
         );
         assert_player_has_cards(&game_after_trade, 0, &["2 h"]); // no trade had taken place yet for player 0
+        assert_player_does_not_have_cards(&game_after_trade, 1, &["2 h"]);
         assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
+        assert_player_does_not_have_cards(&game_after_trade, 0, &["3 h"]);
 
         let game_after_trade = test_state_transition_from(
             1,                         //                           player 1
@@ -1049,8 +1055,6 @@ mod tests {
             |_| (),
             state_trading(0, 1, "2 h", "3 h"), //                   after which the game is waiting for 1 to confirm
         );
-        assert_player_has_cards(&game_after_trade, 0, &["2 h"]); // no trade had taken place yet for player 0
-        assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
 
         let game_after_trade = test_state_transition_from(
             1,                         //                           player 1
@@ -1059,9 +1063,20 @@ mod tests {
             GameState::WaitingForPlayerAction { player: 0 }, //     so it's player 0's turn again
         );
         assert_player_has_cards(&game_after_trade, 0, &["2 h"]); // no trade had taken place for player 0
+        assert_player_does_not_have_cards(&game_after_trade, 1, &["2 h"]);
         assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
+        assert_player_does_not_have_cards(&game_after_trade, 0, &["3 h"]);
 
-        // steal
+        // Steal
+        let game_after_steal = test_state_transition_as(
+            0,     //                                                         player 0
+            STEAL, //                                                         steals 3 h from player 1
+            |_| (),
+            GameState::WaitingForPlayerAction { player: 1 }, //               which ends player 0's turn
+        );
+        assert_player_has_cards(&game_after_steal, 0, &["3 h"]); //           after that player 0 has 3 h
+        assert_player_does_not_have_cards(&game_after_steal, 1, &["3 h"]); // and player one no longer has it
+
         // scrap
         // escape
         // skip
@@ -1300,6 +1315,29 @@ mod tests {
                     .collect::<Vec<String>>()
                     .join(", "),
                 card,
+                game.players[player]
+                    .gathered_parts
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+            );
+        }
+    }
+
+    fn assert_player_does_not_have_cards(game: &Gameplay, player: usize, card_strs: &[&str]) {
+        let cards = cs(card_strs);
+        for card in cards {
+            assert!(
+                !game.players[player].gathered_parts.contains(&card),
+                "player {}'s cards contain {} (they should not have contained any of {}). They were: {}",
+                player,
+                card,
+                cs(card_strs)
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
                 game.players[player]
                     .gathered_parts
                     .iter()
