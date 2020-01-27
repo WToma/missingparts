@@ -1091,11 +1091,34 @@ mod tests {
         assert_player_has_cards(&game_after_scrap, 0, &["q c"]);
         assert_discard_does_not_have_cards(&game_after_scrap, &["q c"]);
 
-        // escape
-        // skip
-        // cheat
+        // Escape
+        let game_after_escape = test_state_transition_as(
+            0,      //                                                              player 0
+            ESCAPE, //                                                              escapes
+            |g| g.players[0].gathered_parts = cs(&["2 h", "2 d", "2 c", "2 s"]),
+            GameState::WaitingForPlayerAction { player: 1 }, //                     which ends their turn
+        );
+        assert!(
+            game_after_escape.players[0].escaped, //                                after that they're escaped
+            "player 0 did not escape",
+        );
 
-        unimplemented!();
+        // Skip
+        test_state_transition_as(
+            0,    //                                            player 0
+            SKIP, //                                            skips a turn
+            |_| (),
+            GameState::WaitingForPlayerAction { player: 1 }, // which ends their turn
+        );
+
+        // Cheat
+        let game_after_cheating = test_state_transition_as(
+            0,               //                                         player 0
+            CHEAT_GET_CARDS, //                                         cheats to get 10 d
+            |_| (),
+            GameState::WaitingForPlayerAction { player: 0 }, //         after which they get another turn to cheat more
+        );
+        assert_player_has_cards(&game_after_cheating, 0, &["10 d"]); // and they have 10 d
     }
 
     #[test]
