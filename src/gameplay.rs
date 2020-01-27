@@ -978,18 +978,16 @@ mod tests {
             GameState::WaitingForPlayerAction { player: 1 }, //        which ends player 0's turn
         );
         assert_player_has_cards(&game_after_scavenge, 0, &["5 d"]); // after this player 0 has the card they chose
-        assert!(
-            game_after_scavenge.discard.contains(&c("6 d"))    //      and the discard has the other 2
-                && game_after_scavenge.discard.contains(&c("7 d")),
-            "the discard did not contain 6 d and 7 d. It was: {:?}",
-            game_after_scavenge.discard
-        );
+        assert_discard_has_cards(&game_after_scavenge, &["6 d", "7 d"]);
 
         // same with just 1 card in the draw
         let game_after_scavenge = test_state_transition_as(
-            0,                                   //                    player 0
-            SCAVENGE,                            //                    starts a scavenge
-            |g| g.draw = Deck::of(cs(&["5 d"])), //                    the scavenge unearths just one card
+            0,        //                                               player 0
+            SCAVENGE, //                                               starts a scavenge
+            |g| {
+                g.discard = Vec::new(); //                             the discard is empty
+                g.draw = Deck::of(cs(&["5 d"])); //                    and the scavenge unearths just one card
+            },
             state_scavenged(0, &["5 d"]),
         );
         let game_after_scavenge = test_state_transition_from(
@@ -999,6 +997,10 @@ mod tests {
             GameState::WaitingForPlayerAction { player: 1 }, //        which ends player 0's turn
         );
         assert_player_has_cards(&game_after_scavenge, 0, &["5 d"]); // after this player 0 has the card they chose
+        assert!(
+            &game_after_scavenge.discard.is_empty(), //                and the discard is still empty
+            "the discard has cards somehow"
+        );
 
         // Share
         let game_after_share = test_state_transition_as(
@@ -1077,7 +1079,18 @@ mod tests {
         assert_player_has_cards(&game_after_steal, 0, &["3 h"]); //           after that player 0 has 3 h
         assert_player_does_not_have_cards(&game_after_steal, 1, &["3 h"]); // and player one no longer has it
 
-        // scrap
+        // Scrap
+        let game_after_scrap = test_state_transition_as(
+            0,     // player 0
+            SCRAP, // scraps 2 h, 2 c, 2 d, a d for q c
+            |_| (),
+            GameState::WaitingForPlayerAction { player: 1 }, // which ends their turn
+        );
+        assert_player_does_not_have_cards(&game_after_scrap, 0, &["2 h", "2 c", "2 d", "a d"]);
+        assert_discard_has_cards(&game_after_scrap, &["2 h", "2 c", "2 d", "a d"]);
+        assert_player_has_cards(&game_after_scrap, 0, &["q c"]);
+        assert_discard_does_not_have_cards(&game_after_scrap, &["q c"]);
+
         // escape
         // skip
         // cheat
@@ -1303,20 +1316,35 @@ mod tests {
 
     // assertions
     fn assert_player_has_cards(game: &Gameplay, player: usize, card_strs: &[&str]) {
+        assert_collection_has_cards(
+            &game.players[player].gathered_parts,
+            &format!("player {}'s cards", player),
+            card_strs,
+        );
+    }
+
+    fn assert_discard_has_cards(game: &Gameplay, card_strs: &[&str]) {
+        assert_collection_has_cards(&game.discard, "the discard pile", card_strs);
+    }
+
+    fn assert_collection_has_cards(
+        collection: &Vec<Card>,
+        collection_name: &str,
+        card_strs: &[&str],
+    ) {
         let cards = cs(card_strs);
         for card in cards {
             assert!(
-                game.players[player].gathered_parts.contains(&card),
-                "player {}'s cards did not contain all of {} ({} was missing), they were: {}",
-                player,
+                collection.contains(&card),
+                "{} did not contain all of {} ({} was missing), they were: {}",
+                collection_name,
                 cs(card_strs)
                     .iter()
                     .map(|c| c.to_string())
                     .collect::<Vec<String>>()
                     .join(", "),
                 card,
-                game.players[player]
-                    .gathered_parts
+                collection
                     .iter()
                     .map(|c| c.to_string())
                     .collect::<Vec<String>>()
@@ -1326,20 +1354,35 @@ mod tests {
     }
 
     fn assert_player_does_not_have_cards(game: &Gameplay, player: usize, card_strs: &[&str]) {
+        assert_collection_does_not_have_cards(
+            &game.players[player].gathered_parts,
+            &format!("player {}'s cards", player),
+            card_strs,
+        );
+    }
+
+    fn assert_discard_does_not_have_cards(game: &Gameplay, card_strs: &[&str]) {
+        assert_collection_does_not_have_cards(&game.discard, "the discard pile", card_strs);
+    }
+
+    fn assert_collection_does_not_have_cards(
+        collection: &Vec<Card>,
+        collection_name: &str,
+        card_strs: &[&str],
+    ) {
         let cards = cs(card_strs);
         for card in cards {
             assert!(
-                !game.players[player].gathered_parts.contains(&card),
-                "player {}'s cards contain {} (they should not have contained any of {}). They were: {}",
-                player,
+                !collection.contains(&card),
+                "{} contain {} (they should not have contained any of {}). They were: {}",
+                collection_name,
                 card,
                 cs(card_strs)
                     .iter()
                     .map(|c| c.to_string())
                     .collect::<Vec<String>>()
                     .join(", "),
-                game.players[player]
-                    .gathered_parts
+                collection
                     .iter()
                     .map(|c| c.to_string())
                     .collect::<Vec<String>>()
