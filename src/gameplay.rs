@@ -903,7 +903,7 @@ mod tests {
         );
 
         // Escape
-        // - escape condition not satisfied
+        test_precondition_as(0, ESCAPE, |_| (), ActionError::EscapeConditionNotSatisfied);
 
         // test for invalid player indexes in trade, share, steal
         unimplemented!();
