@@ -565,12 +565,18 @@ impl Gameplay {
                         card: for_discard_card,
                     });
                 }
-                // TODO: bug: must verify that all cards are actually different.
-                if player_cards.len() != 4 {
-                    return Err(ActionError::WrongNumberOfCardsToScrap {
-                        num_specified: player_cards.len() as u32,
-                        num_needed: 4,
-                    });
+                {
+                    use std::collections::HashSet;
+                    let mut unique_cards = HashSet::new();
+                    for card in &player_cards {
+                        unique_cards.insert(card.clone());
+                    }
+                    if unique_cards.len() != 4 {
+                        return Err(ActionError::WrongNumberOfCardsToScrap {
+                            num_specified: unique_cards.len() as u32,
+                            num_needed: 4,
+                        });
+                    }
                 }
                 for supposedly_player_card in &player_cards {
                     self.precondition_player_has_card(player_index, &supposedly_player_card, true)?;
@@ -840,7 +846,6 @@ mod tests {
                 card: c("3 h"),
             },
         );
-
         test_precondition_as(
             0,                               // player 0
             STEAL,                           // trying to steal from player 1
@@ -855,9 +860,47 @@ mod tests {
         );
 
         // Scrap
-        // - wrong number of cards
-        // - duplicate cards
-        // - discard empty
+        test_precondition_as(
+            0,                             //        player 0
+            "scrap 2 h, 2 c, 2 d for q c", //        trying to scrap 3 cards
+            |_| (),
+            ActionError::WrongNumberOfCardsToScrap {
+                //                                   but 4 is needed
+                num_specified: 3,
+                num_needed: 4,
+            },
+        );
+        test_precondition_as(
+            0,                                  //   player 0
+            "scrap 2 h, 2 h, 2 c, 2 d for q c", //   trying to scrap 4 cards, out of which only 3 are unique
+            |_| (),
+            ActionError::WrongNumberOfCardsToScrap {
+                //                                   but 4 unique ones are needed
+                num_specified: 3,
+                num_needed: 4,
+            },
+        );
+        test_precondition_as(
+            0,                                  // player 0
+            "scrap 2 h, 2 c, 2 d, k d for q c", // trying to scrap some cards, including King of Diamonds
+            |g| {
+                //                                 but player 0 does not have Kind of Diamonds
+                vec_remove_item(&mut g.players[0].gathered_parts, &c("k d"));
+            },
+            ActionError::CardIsNotWithPlayer {
+                initiating_player: true,
+                player: 0,
+                card: c("k d"),
+            },
+        );
+        test_precondition_as(
+            0,     //                                          player 0
+            SCRAP, //                                          trying to scrap for Queen of Clubs
+            |g| {
+                vec_remove_item(&mut g.discard, &c("q c")); // but scrap does not have Queen of Clubs
+            },
+            ActionError::CardIsNotInDiscard { card: c("q c") },
+        );
 
         // Escape
         // - escape condition not satisfied
@@ -970,7 +1013,7 @@ mod tests {
     static TRADE: &'static str = "trade 1 offering 2 h for 3 h";
     static STEAL: &'static str = "steal 3 h from 1";
     static SHARE: &'static str = "share with 1";
-    static SCRAP: &'static str = "share scrap 2 h, 2 c, 2 d, a d for q c";
+    static SCRAP: &'static str = "scrap 2 h, 2 c, 2 d, a d for q c";
     static ESCAPE: &'static str = "escape";
     static SKIP: &'static str = "skip";
     static CHEAT_GET_CARDS: &'static str = "conjure 10 d";
