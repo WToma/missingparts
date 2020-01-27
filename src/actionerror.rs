@@ -70,6 +70,10 @@ pub enum ActionError {
         /// The card that the player wanted to keep, but wasn't actually in the scavenged cards.
         card: Card,
     },
+
+    /// While trying to do an action involving another player (e.g. stealing, sharing) the other player specified
+    /// was the same player as the one making the move.
+    SelfTargeting,
 }
 
 impl fmt::Display for ActionError {
@@ -109,6 +113,7 @@ impl fmt::Display for ActionError {
                 "{} was not in the scavenged cards, pick a valid one",
                 card
             ),
+            SelfTargeting => write!(f, "action not possible on self, pick another player"),
         }
     }
 }

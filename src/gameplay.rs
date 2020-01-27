@@ -427,7 +427,7 @@ impl Gameplay {
                 // question for Andy: should we re-shuffle the discard pile into draw here
                 self.precondition_draw_nonempty()?;
 
-                // TODO bug: ensure that the player does not trade with themselves.
+                Self::precondition_players_different(player_index, with_player)?;
                 self.precondition_player_not_escaped(with_player)?;
 
                 let mut deck_cards = self.draw.remove_top(3);
@@ -453,6 +453,7 @@ impl Gameplay {
                 self.precondition_player_has_card(player_index, &offered, true)?;
                 self.precondition_player_has_card(with_player, &in_exchange, false)?;
                 self.precondition_player_not_escaped(with_player)?;
+                Self::precondition_players_different(player_index, with_player)?;
                 let player = &self.players[player_index];
                 if player.can_make_move() {
                     self.state = GameState::WaitingForTradeConfirmation {
@@ -542,6 +543,7 @@ impl Gameplay {
                 self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_player_has_card(from_player, &card, false)?;
                 self.precondition_player_not_escaped(from_player)?;
+                Self::precondition_players_different(player_index, from_player)?;
                 let player = &self.players[player_index];
                 if player.can_make_move() {
                     let stolen_card = {
@@ -710,6 +712,17 @@ impl Gameplay {
             _ => Err(ActionError::NotPlayersTurn { player: p }),
         }
     }
+
+    fn precondition_players_different(
+        action_player: usize,
+        target_player: usize,
+    ) -> Result<(), ActionError> {
+        if action_player == target_player {
+            Err(ActionError::SelfTargeting)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -731,23 +744,55 @@ mod tests {
         // FinishScavenge:
         test_precondition_completion_wrong_state(PlayerAction::FinishScavenge { card: c("q c") });
         test_precondition(
-            1,
-            action_finish_scavenge("q c"),
-            |mut g| g.state = state_scavenged(0, &["q c"]),
+            1,                                              // player 1
+            action_finish_scavenge("q c"),                  // trying to finish a scavenge
+            |mut g| g.state = state_scavenged(0, &["q c"]), // but it's player 0's turn to finish the scavenge
             ActionError::NotPlayersTurn { player: 1 },
         );
         test_precondition(
-            1,
-            action_finish_scavenge("q c"),
-            |mut g| g.state = state_scavenged(0, &["k c"]),
+            0,                                              // player 0
+            action_finish_scavenge("q c"), //                  trying to accept Queen of Clubs from scavenge
+            |mut g| g.state = state_scavenged(0, &["k c"]), // but the scavenge only contained King of Clubs
             ActionError::CardWasNotScavenged { card: c("q c") },
         );
 
         // Trade
-        // - wrong card this player
-        // - wrong card other player
-        // - other player escaped
-        // - trade with self
+        test_precondition_as(
+            0,     //                                                            player 0
+            TRADE, //                                                            trying to trade 2 h
+            |g| {
+                vec_remove_item(&mut g.players[0].gathered_parts, &c("2 h")); // but does not have it
+            },
+            ActionError::CardIsNotWithPlayer {
+                initiating_player: true,
+                player: 0,
+                card: c("2 h"),
+            },
+        );
+        test_precondition_as(
+            0,     //                                                            player 0
+            TRADE, //                                                            trying to trade player 1 for 3h
+            |g| {
+                vec_remove_item(&mut g.players[1].gathered_parts, &c("3 h")); // but player 1 does not have it
+            },
+            ActionError::CardIsNotWithPlayer {
+                initiating_player: false,
+                player: 1,
+                card: c("3 h"),
+            },
+        );
+        test_precondition_as(
+            0,                               // player 0
+            TRADE,                           // trying to trade with player 1
+            |g| g.players[1].escaped = true, // but they already escaped
+            ActionError::PlayerEscaped { escaped_player: 1 },
+        );
+        test_precondition_as(
+            0,                              // player 0
+            "trade 0 offering 2 h for 2 c", // trying to trade with themselves
+            |_| (),
+            ActionError::SelfTargeting,
+        );
 
         // TradeAccept
         // - wrong state
