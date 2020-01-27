@@ -726,12 +726,22 @@ mod tests {
         // see: test_turn_actions_preconditions
 
         // Scavenge:
-        // - empty deck
+        test_precondition_empty_deck(SCAVENGE);
 
         // FinishScavenge:
-        // - wrong state
-        // - wrong player
-        // - wrong card
+        test_precondition_completion_wrong_state(PlayerAction::FinishScavenge { card: c("q c") });
+        test_precondition(
+            1,
+            action_finish_scavenge("q c"),
+            |mut g| g.state = state_scavenged(0, &["q c"]),
+            ActionError::NotPlayersTurn { player: 1 },
+        );
+        test_precondition(
+            1,
+            action_finish_scavenge("q c"),
+            |mut g| g.state = state_scavenged(0, &["k c"]),
+            ActionError::CardWasNotScavenged { card: c("q c") },
+        );
 
         // Trade
         // - wrong card this player
@@ -748,7 +758,7 @@ mod tests {
         // - wrong player
 
         // Share
-        // - deck empty
+        test_precondition_empty_deck(SHARE);
         // - other player escaped
         // - share with self
 
@@ -763,8 +773,6 @@ mod tests {
 
         // Escape
         // - escape condition not satisfied
-
-        unimplemented!();
 
         // test for invalid player indexes in trade, share, steal
         unimplemented!();
@@ -785,7 +793,6 @@ mod tests {
     #[test]
     fn auto_escape() {
         // test the auto-escape functionality during the game and at the end
-        unimplemented!();
 
         // also test the countdown mechanism
         unimplemented!();
@@ -810,43 +817,66 @@ mod tests {
     }
 
     fn test_turn_action_precondition_correct_player(action: &str) {
-        test_precondition(
+        test_precondition_as(
+            0,
             action,
-            |mut g| {
-                g.state = GameState::WaitingForPlayerAction { player: 1 };
-            },
+            |mut g| g.state = GameState::WaitingForPlayerAction { player: 1 },
             ActionError::NotPlayersTurn { player: 0 },
         )
     }
 
     fn test_turn_action_precondition_correct_state(action: &str) {
-        test_precondition(
+        test_precondition_as(
+            0,
             action,
             |mut g| {
                 g.state = GameState::WaitingForScavengeComplete {
                     player: 0,
                     scavenged_cards: Vec::new(),
-                };
+                }
             },
             ActionError::NotPlayersTurn { player: 0 },
         )
     }
 
-    fn test_precondition<F: Fn(&mut Gameplay)>(
+    fn test_precondition_empty_deck(action: &str) {
+        test_precondition_as(
+            0,
+            action,
+            |mut g| g.draw = empty_deck(),
+            ActionError::DeckEmpty,
+        )
+    }
+
+    fn test_precondition_completion_wrong_state(action: PlayerAction) {
+        test_precondition(0, action, |_| (), ActionError::NotPlayersTurn { player: 0 });
+    }
+
+    fn test_precondition_as<F: Fn(&mut Gameplay)>(
+        player: usize,
         action: &str,
         game_setup: F,
         expected_action_error: ActionError,
     ) {
         let action = PlayerAction::try_from(action).unwrap();
+        test_precondition(player, action, game_setup, expected_action_error);
+    }
+
+    fn test_precondition<F: Fn(&mut Gameplay)>(
+        player: usize,
+        action: PlayerAction,
+        game_setup: F,
+        expected_action_error: ActionError,
+    ) {
         let mut game = basic_2_player_with_cards();
         game_setup(&mut game);
         assert_eq!(
-            game.process_player_action(0, action).unwrap_err(),
+            game.process_player_action(player, action).unwrap_err(),
             expected_action_error,
         );
     }
 
-    // turn action definitions:
+    // turn action constants & helpers for constructions:
     // these all assume the `basic_2_player_with_cards` setup, and that it's player 0's turn.
     static SCAVENGE: &'static str = "scavenge";
     static TRADE: &'static str = "trade 1 offering 2 h for 3 h";
@@ -869,6 +899,12 @@ mod tests {
         ]
     }
 
+    fn action_finish_scavenge(card: &str) -> PlayerAction {
+        PlayerAction::FinishScavenge { card: c(card) }
+    }
+
+    // primitives for constructing Gameplay objects
+
     fn basic_2_player_with_cards() -> Gameplay {
         basic_game(&vec![
             vec!["2 h", "2 c", "2 d", "a d"],
@@ -880,7 +916,7 @@ mod tests {
         Gameplay {
             players: players_with_cards(card_strs_per_player),
             draw: Deck::shuffle(),
-            discard: vec![Card::try_from("q c").unwrap()],
+            discard: vec![c("q c")],
             state: GameState::WaitingForPlayerAction { player: 0 },
         }
     }
@@ -896,15 +932,30 @@ mod tests {
         for card_strs in card_strs_per_player {
             let mut cards = Vec::new();
             for card_str in card_strs {
-                cards.push(Card::try_from(*card_str).unwrap());
+                cards.push(c(*card_str));
             }
             players.push(Player {
-                missing_part: Card::try_from("Ace of Spades").unwrap(),
+                missing_part: c("Ace of Spades"),
                 gathered_parts: cards,
                 escaped: false,
                 moves_left: None,
             });
         }
         players
+    }
+
+    fn state_scavenged(player: usize, card_strs: &[&str]) -> GameState {
+        let mut cards = Vec::new();
+        for card_str in card_strs {
+            cards.push(c(*card_str));
+        }
+        GameState::WaitingForScavengeComplete {
+            player: player,
+            scavenged_cards: cards,
+        }
+    }
+
+    fn c(card_str: &str) -> Card {
+        Card::try_from(card_str).unwrap()
     }
 }
