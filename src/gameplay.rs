@@ -1020,12 +1020,47 @@ mod tests {
         assert!(
             game_after_share.players[1].gathered_parts.is_empty(), //      player 1 got nothing because there weren't
             //                                                             enough cards to begin with
-            "player 1 didn't have 0 parts",
+            "player 1 got some parts somehow",
         );
-        //
-        // trade
-        // accept trade
-        // reject trade
+
+        // Trade + TradeAccept
+        let game_after_trade = test_state_transition_as(
+            0,     //                                               player 0
+            TRADE, //                                               starts a trade with player 1 offering 2 h for 3 h
+            |_| (),
+            state_trading(0, 1, "2 h", "3 h"), //                   after which the game is waiting for 1 to confirm
+        );
+        assert_player_has_cards(&game_after_trade, 0, &["2 h"]); // no trade had taken place yet for player 0
+        assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
+
+        let game_after_trade = test_state_transition_from(
+            1,                         //                           player 1
+            PlayerAction::TradeAccept, //                           accepts the trade
+            game_after_trade,
+            GameState::WaitingForPlayerAction { player: 1 }, //     which ends player 0's turn
+        );
+        assert_player_has_cards(&game_after_trade, 1, &["2 h"]); // and the trade takes place: player 1 gets 2 h
+        assert_player_has_cards(&game_after_trade, 0, &["3 h"]); // and player 0 gets 3 h
+
+        // Trade + TradeReject
+        let game_after_trade = test_state_transition_as(
+            0,     //                                               player 0
+            TRADE, //                                               starts a trade with player 1 offering 2 h for 3 h
+            |_| (),
+            state_trading(0, 1, "2 h", "3 h"), //                   after which the game is waiting for 1 to confirm
+        );
+        assert_player_has_cards(&game_after_trade, 0, &["2 h"]); // no trade had taken place yet for player 0
+        assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
+
+        let game_after_trade = test_state_transition_from(
+            1,                         //                           player 1
+            PlayerAction::TradeReject, //                           rejects the trade
+            game_after_trade,
+            GameState::WaitingForPlayerAction { player: 0 }, //     so it's player 0's turn again
+        );
+        assert_player_has_cards(&game_after_trade, 0, &["2 h"]); // no trade had taken place for player 0
+        assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
+
         // steal
         // scrap
         // escape
