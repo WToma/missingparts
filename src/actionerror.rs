@@ -74,6 +74,10 @@ pub enum ActionError {
     /// While trying to do an action involving another player (e.g. stealing, sharing) the other player specified
     /// was the same player as the one making the move.
     SelfTargeting,
+
+    /// While trying to do an action involving another player (e.g. stealing, sharing) the other player specified
+    /// was not an actual player in the game.
+    InvalidPlayerReference { non_existent_player: usize },
 }
 
 impl fmt::Display for ActionError {
@@ -114,6 +118,9 @@ impl fmt::Display for ActionError {
                 card
             ),
             SelfTargeting => write!(f, "action not possible on self, pick another player"),
+            InvalidPlayerReference {
+                non_existent_player,
+            } => write!(f, "player {} is not a valid player", non_existent_player),
         }
     }
 }

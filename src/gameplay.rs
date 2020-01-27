@@ -423,6 +423,7 @@ impl Gameplay {
                 self.discard.append(&mut scavenged_cards);
             }
             Share { with_player } => {
+                self.precondition_player_exists(with_player)?;
                 self.precondition_waiting_for_player_action(player_index)?;
                 // question for Andy: should we re-shuffle the discard pile into draw here
                 self.precondition_draw_nonempty()?;
@@ -449,6 +450,7 @@ impl Gameplay {
                         in_exchange,
                     },
             } => {
+                self.precondition_player_exists(with_player)?;
                 self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_player_has_card(player_index, &offered, true)?;
                 self.precondition_player_has_card(with_player, &in_exchange, false)?;
@@ -540,6 +542,7 @@ impl Gameplay {
                 }
             }
             Steal { from_player, card } => {
+                self.precondition_player_exists(from_player)?;
                 self.precondition_waiting_for_player_action(player_index)?;
                 self.precondition_player_has_card(from_player, &card, false)?;
                 self.precondition_player_not_escaped(from_player)?;
@@ -729,6 +732,16 @@ impl Gameplay {
             Ok(())
         }
     }
+
+    fn precondition_player_exists(&self, p: usize) -> Result<(), ActionError> {
+        if self.players.len() > p {
+            Ok(())
+        } else {
+            Err(ActionError::InvalidPlayerReference {
+                non_existent_player: p,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -799,6 +812,14 @@ mod tests {
             |_| (),
             ActionError::SelfTargeting,
         );
+        test_precondition_as(
+            0,                              // player 0
+            "trade 9 offering 2 h for 4 h", // trying to trade with a non-existent player
+            |_| (),
+            ActionError::InvalidPlayerReference {
+                non_existent_player: 9,
+            },
+        );
 
         // TradeAccept
         test_precondition_completion_wrong_state(PlayerAction::TradeAccept);
@@ -832,6 +853,14 @@ mod tests {
             |_| (),
             ActionError::SelfTargeting,
         );
+        test_precondition_as(
+            0,              // player 0
+            "share with 9", // trying to share with a non-existent player
+            |_| (),
+            ActionError::InvalidPlayerReference {
+                non_existent_player: 9,
+            },
+        );
 
         // Steal
         test_precondition_as(
@@ -857,6 +886,14 @@ mod tests {
             "steal 2 h from 0", // trying to steal from themselves
             |_| (),
             ActionError::SelfTargeting,
+        );
+        test_precondition_as(
+            0,                  // player 0
+            "share 9 d from 9", // trying to steal from a non-existent player
+            |_| (),
+            ActionError::InvalidPlayerReference {
+                non_existent_player: 9,
+            },
         );
 
         // Scrap
@@ -904,9 +941,6 @@ mod tests {
 
         // Escape
         test_precondition_as(0, ESCAPE, |_| (), ActionError::EscapeConditionNotSatisfied);
-
-        // test for invalid player indexes in trade, share, steal
-        unimplemented!();
     }
 
     #[test]
