@@ -961,92 +961,68 @@ mod tests {
     fn transitions() {
         // Scavenge
         let game_after_scavenge = test_state_transition_as(
-            0,                                                 // player 0
-            SCAVENGE,                                          // starts a scavenge
-            |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])), // the scavenge unearths these cards
+            0,                                                 //      player 0
+            SCAVENGE,                                          //      starts a scavenge
+            |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])), //      the scavenge unearths these cards
             state_scavenged(0, &["5 d", "6 d", "7 d"]),
         );
         // FinishScavenge
         let game_after_scavenge = test_state_transition_from(
-            0,                             //                     then the same player
-            action_finish_scavenge("5 d"), //                     finishes the action by choosing 5 d from the loot
+            0,                             //                          then the same player
+            action_finish_scavenge("5 d"), //                          finishes the action by choosing 5 d from the loot
             game_after_scavenge,
-            GameState::WaitingForPlayerAction { player: 1 }, //   which ends player 0's turn
+            GameState::WaitingForPlayerAction { player: 1 }, //        which ends player 0's turn
         );
+        assert_player_has_cards(&game_after_scavenge, 0, &["5 d"]); // after this player 0 has the card they chose
         assert!(
-            game_after_scavenge.players[0] //                     after this player 0
-                .gathered_parts
-                .contains(&c("5 d")), //                          has the card they chose
-            "player 0 did not have 5 d. They had: {:?}",
-            game_after_scavenge.players[0].gathered_parts
-        );
-        assert!(
-            game_after_scavenge.discard.contains(&c("6 d"))    // and the discard has the other 2
+            game_after_scavenge.discard.contains(&c("6 d"))    //      and the discard has the other 2
                 && game_after_scavenge.discard.contains(&c("7 d")),
             "the discard did not contain 6 d and 7 d. It was: {:?}",
             game_after_scavenge.discard
         );
+
         // same with just 1 card in the draw
         let game_after_scavenge = test_state_transition_as(
-            0,                                   //              player 0
-            SCAVENGE,                            //              starts a scavenge
-            |g| g.draw = Deck::of(cs(&["5 d"])), //              the scavenge unearths just one card
+            0,                                   //                    player 0
+            SCAVENGE,                            //                    starts a scavenge
+            |g| g.draw = Deck::of(cs(&["5 d"])), //                    the scavenge unearths just one card
             state_scavenged(0, &["5 d"]),
         );
         let game_after_scavenge = test_state_transition_from(
-            0,                             //                   then the same player
-            action_finish_scavenge("5 d"), //                   finishes the action by choosing that one card
+            0,                             //                          then the same player
+            action_finish_scavenge("5 d"), //                          finishes the action by choosing that one card
             game_after_scavenge,
-            GameState::WaitingForPlayerAction { player: 1 }, // which ends player 0's turn
+            GameState::WaitingForPlayerAction { player: 1 }, //        which ends player 0's turn
         );
-        assert!(
-            game_after_scavenge.players[0] //                   after this player 0
-                .gathered_parts
-                .contains(&c("5 d")), //                        has the card they chose
-            "player 0 did not have 5 d. They had: {:?}",
-            game_after_scavenge.players[0].gathered_parts
-        );
+        assert_player_has_cards(&game_after_scavenge, 0, &["5 d"]); // after this player 0 has the card they chose
 
         // Share
         let game_after_share = test_state_transition_as(
-            0,
-            SHARE,
-            |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])),
-            GameState::WaitingForPlayerAction { player: 1 },
+            0,     //                                                      player 0
+            SHARE, //                                                      starts a share with player 1
+            |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])), //          unearthing these cards
+            GameState::WaitingForPlayerAction { player: 1 }, //            which ends player 0's turn
         );
-        assert!(
-            game_after_share.players[0]
-                .gathered_parts
-                .contains(&c("5 d"))
-                && game_after_share.players[0]
-                    .gathered_parts
-                    .contains(&c("6 d")),
-            "player 0 did not have 5 d and 6 d. They had: {:?}",
-            game_after_share.players[0].gathered_parts
-        );
-        assert!(
-            game_after_share.players[1]
-                .gathered_parts
-                .contains(&c("7 d")),
-            "player 1 did not have 7 d. They had: {:?}"
-        );
+        assert_player_has_cards(&game_after_share, 0, &["5 d", "6 d"]); // after this player 0 has the first 2 cards
+        assert_player_has_cards(&game_after_share, 1, &["7 d"]); //        and player 1 has the 3rd
+
         // same with just 2 cards in the draw
         let game_after_share = test_state_transition_as(
-            0,
-            SHARE,
-            |g| g.draw = Deck::of(cs(&["5 d", "6 d"])),
+            0,     //                                                      player 0
+            SHARE, //                                                      starts a share with player 1
+            |g| {
+                g.players[1].gathered_parts = Vec::new(); //               who had nothing to begin with
+                g.draw = Deck::of(cs(&["5 d", "6 d"])); //                 the share unearts just 2 cards
+            },
             GameState::WaitingForPlayerAction { player: 1 },
         );
+        assert_player_has_cards(&game_after_share, 0, &["5 d", "6 d"]); // which player 0 gets
         assert!(
-            game_after_share.players[0]
-                .gathered_parts
-                .contains(&c("5 d"))
-                && game_after_share.players[0]
-                    .gathered_parts
-                    .contains(&c("6 d")),
-            "player 0 did not have 5 d and 6 d. They had: {:?}",
-            game_after_share.players[0].gathered_parts
+            game_after_share.players[1].gathered_parts.is_empty(), //      player 1 got nothing because there weren't
+            //                                                             enough cards to begin with
+            "player 1 didn't have 0 parts",
         );
+        //
         // trade
         // accept trade
         // reject trade
@@ -1272,6 +1248,30 @@ mod tests {
                 offered: c(offering_str),
                 in_exchange: c(in_exchange_str),
             },
+        }
+    }
+
+    // assertions
+    fn assert_player_has_cards(game: &Gameplay, player: usize, card_strs: &[&str]) {
+        let cards = cs(card_strs);
+        for card in cards {
+            assert!(
+                game.players[player].gathered_parts.contains(&card),
+                "player {}'s cards did not contain all of {} ({} was missing), they were: {}",
+                player,
+                cs(card_strs)
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                card,
+                game.players[player]
+                    .gathered_parts
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", "),
+            );
         }
     }
 
