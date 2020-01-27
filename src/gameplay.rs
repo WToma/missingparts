@@ -828,8 +828,31 @@ mod tests {
         );
 
         // Steal
-        // - wrong card other player
-        // - other player escaped
+        test_precondition_as(
+            0,     //                                                            player 0
+            STEAL, //                                                            trying to steal 3 Hearts from player 1
+            |g| {
+                vec_remove_item(&mut g.players[1].gathered_parts, &c("3 h")); // but player 1 does not have 3 Hearts
+            },
+            ActionError::CardIsNotWithPlayer {
+                initiating_player: false,
+                player: 1,
+                card: c("3 h"),
+            },
+        );
+
+        test_precondition_as(
+            0,                               // player 0
+            STEAL,                           // trying to steal from player 1
+            |g| g.players[1].escaped = true, // but they already escaped
+            ActionError::PlayerEscaped { escaped_player: 1 },
+        );
+        test_precondition_as(
+            0,                  // player 0
+            "steal 2 h from 0", // trying to steal from themselves
+            |_| (),
+            ActionError::SelfTargeting,
+        );
 
         // Scrap
         // - wrong number of cards
