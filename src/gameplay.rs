@@ -814,8 +814,18 @@ mod tests {
 
         // Share
         test_precondition_empty_deck(SHARE);
-        // - other player escaped
-        // - share with self
+        test_precondition_as(
+            0,                               // player 0
+            SHARE,                           // trying to share with player 1
+            |g| g.players[1].escaped = true, // but they already escaped
+            ActionError::PlayerEscaped { escaped_player: 1 },
+        );
+        test_precondition_as(
+            0,              // player 0
+            "share with 0", // trying to trade with themselves
+            |_| (),
+            ActionError::SelfTargeting,
+        );
 
         // Steal
         // - wrong card other player
