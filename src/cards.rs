@@ -142,6 +142,20 @@ impl TryFrom<&str> for Rank {
 ///
 /// Note: for programming purposes, `Card` should be treated as a scalar, therefore the `Clone` and `Copy`
 /// traits are derived.
+///
+/// For convenience, there exists a `try_from` (see `std::convert::TryFrom`) method to parse a card from a string.
+/// Parsing examples:
+/// ```
+/// # use std::convert::TryFrom;
+/// # use missingparts::cards::*;
+/// # use Suit::*;
+/// # use Rank::*;
+/// assert_eq!(Card::try_from("Ace of Spades").unwrap(), Card { suit: Spades, rank: Ace });
+/// assert_eq!(Card::try_from("1 of S").unwrap(), Card { suit: Spades, rank: Ace });
+/// assert_eq!(Card::try_from("1 s").unwrap(), Card { suit: Spades, rank: Ace });
+/// assert_eq!(Card::try_from("2 h").unwrap(), Card { suit: Hearts, rank: Two });
+/// assert_eq!(Card::try_from("two hearts").unwrap(), Card { suit: Hearts, rank: Two });
+/// ```
 pub struct Card {
     pub suit: Suit,
     pub rank: Rank,
@@ -196,8 +210,9 @@ impl TryFrom<&str> for Card {
 
 /// A deck of `Card`s.
 ///
-/// As long as the deck was created using the [`shuffle` method](struct.Deck.html#method.shuffle) and
-/// no cards were manually added, the deck will remain unique and in random order.
+/// As long as the deck was created using the [`shuffle` method](#method.shuffle) and
+/// no cards were manually added, the deck will remain unique and in random order. If [`of`](#method.of) is used this
+/// is not guaranteed.
 #[derive(Debug)]
 pub struct Deck {
     shuffled_cards: Vec<Card>,
@@ -223,6 +238,24 @@ impl Deck {
             }
         }
         rand::thread_rng().shuffle(&mut cards[..]);
+        Deck {
+            shuffled_cards: cards,
+        }
+    }
+
+    /// Returns a deck consisting of the specified cards, in the specified order.
+    ///
+    /// # Examples
+    /// ```
+    /// # use missingparts::cards::*;
+    /// # fn card(s: &str) -> Card {
+    /// #   use std::convert::TryFrom;
+    /// #   Card::try_from(s).unwrap()
+    /// # }
+    /// let mut deck = Deck::of(vec![card("2 of Hearts"), card("3 of Hearts"), card("4 of Hearts")]);
+    /// assert_eq!(*(deck.remove_top(1).first().unwrap()), card("2 of Hearts"));
+    /// ```
+    pub fn of(cards: Vec<Card>) -> Deck {
         Deck {
             shuffled_cards: cards,
         }

@@ -105,7 +105,7 @@ impl Player {
 }
 
 /// The part of the game's observable state that determines which actions or multi-part completing actions can be taken.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum GameState {
     /// The game is waiting for a turn action from `player` (see [`PlayerAction`](enum.PlayerAction.html)).
     WaitingForPlayerAction {
@@ -233,6 +233,17 @@ pub fn vec_remove_item<T: PartialEq>(v: &mut Vec<T>, to_remove: &T) -> Option<T>
     Some(v.remove(index))
 }
 
+fn vec_remove_top_n<T>(v: &mut Vec<T>, n: usize) -> Vec<T> {
+    let mut result = Vec::new();
+    for _ in 0..n {
+        if v.is_empty() {
+            break;
+        }
+        result.push(v.remove(0));
+    }
+    result
+}
+
 /// A short summary of the results fo the game, once the game is finished.
 pub struct GameResults {
     /// Players who have escaped, and have their missing part.
@@ -322,6 +333,7 @@ impl Gameplay {
     /// # Examples
     /// ```
     /// # use missingparts::gameplay::*;
+    /// # use missingparts::playeraction::*;
     /// use GameState::*;
     /// use std::convert::TryFrom;
     /// let (mut game, _) = Gameplay::init(2);
@@ -361,6 +373,7 @@ impl Gameplay {
     /// # Examples
     /// ```
     /// # use missingparts::gameplay::*;
+    /// # use missingparts::playeraction::*;
     /// use GameState::*;
     /// use std::convert::TryFrom;
     /// let (mut game, _) = Gameplay::init(2);
@@ -431,15 +444,16 @@ impl Gameplay {
                 Self::precondition_players_different(player_index, with_player)?;
                 self.precondition_player_not_escaped(with_player)?;
 
-                let mut deck_cards = self.draw.remove_top(3);
                 let player = &self.players[player_index];
                 if player.can_make_move() {
+                    let mut deck_cards = self.draw.remove_top(3);
+
                     let player = &mut self.players[player_index];
-                    let other_player_card = deck_cards.remove(0);
-                    player.receive_parts(deck_cards);
+                    let player_cards = vec_remove_top_n(&mut deck_cards, 2);
+                    player.receive_parts(player_cards);
 
                     let other_player = &mut self.players[with_player];
-                    other_player.receive_part(other_player_card);
+                    other_player.receive_parts(deck_cards);
                 }
             }
             Trade {
@@ -945,7 +959,103 @@ mod tests {
 
     #[test]
     fn transitions() {
-        // test the transitions & effects for each action (valid only)
+        // Scavenge
+        let game_after_scavenge = test_state_transition_as(
+            0,                                                 // player 0
+            SCAVENGE,                                          // starts a scavenge
+            |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])), // the scavenge unearths these cards
+            state_scavenged(0, &["5 d", "6 d", "7 d"]),
+        );
+        // FinishScavenge
+        let game_after_scavenge = test_state_transition_from(
+            0,                             //                     then the same player
+            action_finish_scavenge("5 d"), //                     finishes the action by choosing 5 d from the loot
+            game_after_scavenge,
+            GameState::WaitingForPlayerAction { player: 1 }, //   which ends player 0's turn
+        );
+        assert!(
+            game_after_scavenge.players[0] //                     after this player 0
+                .gathered_parts
+                .contains(&c("5 d")), //                          has the card they chose
+            "player 0 did not have 5 d. They had: {:?}",
+            game_after_scavenge.players[0].gathered_parts
+        );
+        assert!(
+            game_after_scavenge.discard.contains(&c("6 d"))    // and the discard has the other 2
+                && game_after_scavenge.discard.contains(&c("7 d")),
+            "the discard did not contain 6 d and 7 d. It was: {:?}",
+            game_after_scavenge.discard
+        );
+        // same with just 1 card in the draw
+        let game_after_scavenge = test_state_transition_as(
+            0,                                   //              player 0
+            SCAVENGE,                            //              starts a scavenge
+            |g| g.draw = Deck::of(cs(&["5 d"])), //              the scavenge unearths just one card
+            state_scavenged(0, &["5 d"]),
+        );
+        let game_after_scavenge = test_state_transition_from(
+            0,                             //                   then the same player
+            action_finish_scavenge("5 d"), //                   finishes the action by choosing that one card
+            game_after_scavenge,
+            GameState::WaitingForPlayerAction { player: 1 }, // which ends player 0's turn
+        );
+        assert!(
+            game_after_scavenge.players[0] //                   after this player 0
+                .gathered_parts
+                .contains(&c("5 d")), //                        has the card they chose
+            "player 0 did not have 5 d. They had: {:?}",
+            game_after_scavenge.players[0].gathered_parts
+        );
+
+        // Share
+        let game_after_share = test_state_transition_as(
+            0,
+            SHARE,
+            |g| g.draw = Deck::of(cs(&["5 d", "6 d", "7 d"])),
+            GameState::WaitingForPlayerAction { player: 1 },
+        );
+        assert!(
+            game_after_share.players[0]
+                .gathered_parts
+                .contains(&c("5 d"))
+                && game_after_share.players[0]
+                    .gathered_parts
+                    .contains(&c("6 d")),
+            "player 0 did not have 5 d and 6 d. They had: {:?}",
+            game_after_share.players[0].gathered_parts
+        );
+        assert!(
+            game_after_share.players[1]
+                .gathered_parts
+                .contains(&c("7 d")),
+            "player 1 did not have 7 d. They had: {:?}"
+        );
+        // same with just 2 cards in the draw
+        let game_after_share = test_state_transition_as(
+            0,
+            SHARE,
+            |g| g.draw = Deck::of(cs(&["5 d", "6 d"])),
+            GameState::WaitingForPlayerAction { player: 1 },
+        );
+        assert!(
+            game_after_share.players[0]
+                .gathered_parts
+                .contains(&c("5 d"))
+                && game_after_share.players[0]
+                    .gathered_parts
+                    .contains(&c("6 d")),
+            "player 0 did not have 5 d and 6 d. They had: {:?}",
+            game_after_share.players[0].gathered_parts
+        );
+        // trade
+        // accept trade
+        // reject trade
+        // steal
+        // scrap
+        // escape
+        // skip
+        // cheat
+
         unimplemented!();
     }
 
@@ -1041,6 +1151,39 @@ mod tests {
         );
     }
 
+    fn test_state_transition_as<F: Fn(&mut Gameplay)>(
+        player: usize,
+        action: &str,
+        game_setup: F,
+        expected_state: GameState,
+    ) -> Gameplay {
+        let action = PlayerAction::try_from(action).unwrap();
+        test_state_transition(player, action, game_setup, expected_state)
+    }
+
+    fn test_state_transition<F: Fn(&mut Gameplay)>(
+        player: usize,
+        action: PlayerAction,
+        game_setup: F,
+        expected_state: GameState,
+    ) -> Gameplay {
+        let mut game = basic_2_player_with_cards();
+        game_setup(&mut game);
+        test_state_transition_from(player, action, game, expected_state)
+    }
+
+    fn test_state_transition_from(
+        player: usize,
+        action: PlayerAction,
+        mut game: Gameplay,
+        expected_state: GameState,
+    ) -> Gameplay {
+        game.process_player_action(player, action).unwrap();
+        let new_state = game.get_state();
+        assert_eq!(*new_state, expected_state);
+        game
+    }
+
     // turn action constants & helpers for constructions:
     // these all assume the `basic_2_player_with_cards` setup, and that it's player 0's turn.
     static SCAVENGE: &'static str = "scavenge";
@@ -1110,13 +1253,9 @@ mod tests {
     }
 
     fn state_scavenged(player: usize, card_strs: &[&str]) -> GameState {
-        let mut cards = Vec::new();
-        for card_str in card_strs {
-            cards.push(c(*card_str));
-        }
         GameState::WaitingForScavengeComplete {
             player: player,
-            scavenged_cards: cards,
+            scavenged_cards: cs(card_strs),
         }
     }
 
@@ -1138,5 +1277,13 @@ mod tests {
 
     fn c(card_str: &str) -> Card {
         Card::try_from(card_str).unwrap()
+    }
+
+    fn cs(card_strs: &[&str]) -> Vec<Card> {
+        let mut cards = Vec::new();
+        for card_str in card_strs {
+            cards.push(c(*card_str));
+        }
+        cards
     }
 }
