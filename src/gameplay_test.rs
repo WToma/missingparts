@@ -1,11 +1,10 @@
 use super::*;
 use std::convert::TryFrom;
 
+/// Test that for each precondition of each action, if the precondition is not satisfied, the action fails
+/// with the appropriate error.
 #[test]
 fn preconditions() {
-    // test that for each precondition of each action, if the precondition is not satisfied, the action fails
-    // with the appropriate error
-
     // All turn actions:
     // see: test_turn_actions_preconditions
 
@@ -195,6 +194,8 @@ fn preconditions() {
     test_precondition_as(0, ESCAPE, |_| (), ActionError::EscapeConditionNotSatisfied);
 }
 
+/// Tests that for each action when it is successfully executed, the game state transitions to the correct state,
+/// and any side effects by the action are correctly effected.
 #[test]
 fn transitions() {
     // Scavenge
@@ -359,17 +360,15 @@ fn transitions() {
     assert_player_has_cards(&game_after_cheating, 0, &["10 d"]); // and they have 10 d
 }
 
+/// Test that players who have escaped our out of move are not scheduled for a turn
 #[test]
 fn skip_escaped_out_of_move_players() {
-    // test that players who have escaped our out of move are not scheduled for a turn
     unimplemented!();
 }
 
+/// Tests the auto-escape functionality during the game and at the end, and the countdown mechanism.
 #[test]
 fn auto_escape() {
-    // test the auto-escape functionality during the game and at the end
-
-    // also test the countdown mechanism
     unimplemented!();
 }
 
@@ -379,6 +378,9 @@ fn get_results() {
     unimplemented!();
 }
 
+/// Tests that for each turn action, the preconditions are enforced properly:
+/// - can only be called when it's the specified player's turn
+/// - cannot be called in other states.
 #[test]
 fn test_turn_action_preconditions() {
     for action in turn_actions() {
