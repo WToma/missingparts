@@ -397,7 +397,7 @@ fn skip_escaped_out_of_move_players() {
         .unwrap();
     game.process_player_action(
         0,
-        PlayerAction::FinishScavenge { card: missing_card }, //      and find their msising part
+        PlayerAction::FinishScavenge { card: missing_card }, //      and find their missing part
     )
     .unwrap();
     assert!(game.players[0].escaped, "player 0 was not escaped"); // which lets them to escape, triggering the end game
@@ -416,16 +416,44 @@ fn skip_escaped_out_of_move_players() {
     );
 }
 
-/// Tests the auto-escape functionality during the game and at the end, and the countdown mechanism.
-#[test]
-fn auto_escape() {
-    unimplemented!();
-}
-
 #[test]
 fn get_results() {
-    // test get_results function
-    unimplemented!();
+    let mut game = basic_game(&vec![
+        vec!["2 h", "2 c", "2 d", "2 s"], //                         player 0 has the cards to escape
+        vec!["3 h", "3 c", "3 d", "a c"],
+        vec!["4 h", "4 c", "4 d", "k c"],
+    ]);
+    let missing_card = game.players[0].missing_part;
+    game.draw = Deck::of(vec![missing_card]);
+
+    game.process_player_action(0, PlayerAction::Scavenge) //         they scavenge
+        .unwrap();
+    game.process_player_action(
+        0,
+        PlayerAction::FinishScavenge { card: missing_card }, //      and find their missing part
+    )
+    .unwrap();
+    game.process_player_action(
+        1,
+        PlayerAction::CheatGetCards {
+            cards: cs(&["3 s"]), //                                  player 1 cheats to satisfy the escape condition
+        },
+    )
+    .unwrap();
+    game.process_player_action(1, PlayerAction::Skip).unwrap(); //   and then passes
+    game.process_player_action(2, PlayerAction::Skip).unwrap(); //   player 2 passes
+    assert_eq!(
+        //                                                           which ends the game
+        game.state,
+        GameState::Finished,
+        "the game state was not Finished, was {:?}",
+        game.state
+    );
+
+    let results = game.get_results();
+    assert_eq!(results.winners, vec![0]);
+    assert_eq!(results.escaped_but_not_winner, vec![1]);
+    assert_eq!(results.stuck, vec![2]);
 }
 
 /// Tests that for each turn action, the preconditions are enforced properly:
