@@ -363,7 +363,47 @@ fn transitions() {
 /// Test that players who have escaped our out of move are not scheduled for a turn
 #[test]
 fn skip_escaped_out_of_move_players() {
-    unimplemented!();
+    let mut game = basic_game(&vec![
+        vec!["2 h", "2 c", "2 d", "2 s"], //                         player 0 has the cards to escape
+        vec!["3 h", "3 c", "3 d", "a c"],
+        vec!["4 h", "4 c", "4 d", "k c"],
+    ]);
+
+    game.process_player_action(0, PlayerAction::Escape).unwrap(); // and does so on their turn
+    assert_eq!(
+        game.players[1].moves_left, //                               the other players have 1 move left
+        Some(1),
+        "player 1 did not have 1 move left, had {:?}",
+        game.players[1].moves_left
+    );
+    assert_eq!(
+        game.players[2].moves_left,
+        Some(1),
+        "player 2 did not have 1 move left, had {:?}",
+        game.players[2].moves_left
+    );
+    println!("current game state: {:?}", game.state);
+    game.process_player_action(1, PlayerAction::Skip).unwrap(); // and they skip
+    assert_eq!(
+        game.players[1].moves_left, //                             using up their last move
+        Some(0),
+        "player 1 did not have - move left, had {:?}",
+        game.players[1].moves_left
+    );
+    game.process_player_action(2, PlayerAction::Skip).unwrap();
+    assert_eq!(
+        game.players[2].moves_left,
+        Some(0),
+        "player 2 did not have - move left, had {:?}",
+        game.players[2].moves_left
+    );
+    assert_eq!(
+        //                                                         which ends the game
+        game.state,
+        GameState::Finished,
+        "the game state was not Finished, was {:?}",
+        game.state
+    );
 }
 
 /// Tests the auto-escape functionality during the game and at the end, and the countdown mechanism.

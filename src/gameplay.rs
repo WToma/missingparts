@@ -679,6 +679,7 @@ impl Gameplay {
                 new_state = WaitingForPlayerAction {
                     player: player_index,
                 };
+                break;
             }
         }
 
