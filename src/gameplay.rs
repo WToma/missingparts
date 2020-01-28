@@ -654,7 +654,7 @@ impl Gameplay {
 
     fn trigger_endgame(&mut self) {
         for player in &mut self.players {
-            if !player.escaped {
+            if player.can_make_move() {
                 player.set_remaining_moves(1);
             }
         }

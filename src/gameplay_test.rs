@@ -370,35 +370,45 @@ fn skip_escaped_out_of_move_players() {
     ]);
 
     game.process_player_action(0, PlayerAction::Escape).unwrap(); // and does so on their turn
-    assert_eq!(
-        game.players[1].moves_left, //                               the other players have 1 move left
-        Some(1),
-        "player 1 did not have 1 move left, had {:?}",
-        game.players[1].moves_left
-    );
-    assert_eq!(
-        game.players[2].moves_left,
-        Some(1),
-        "player 2 did not have 1 move left, had {:?}",
-        game.players[2].moves_left
-    );
-    println!("current game state: {:?}", game.state);
-    game.process_player_action(1, PlayerAction::Skip).unwrap(); // and they skip
-    assert_eq!(
-        game.players[1].moves_left, //                             using up their last move
-        Some(0),
-        "player 1 did not have - move left, had {:?}",
-        game.players[1].moves_left
-    );
+    assert_player_moves(&game, 1, Some(1)); //                       the other players have 1 move left
+    assert_player_moves(&game, 2, Some(1));
+    game.process_player_action(1, PlayerAction::Skip).unwrap(); //   and they skip
+    assert_player_moves(&game, 1, Some(0)); //                       using up their last move
     game.process_player_action(2, PlayerAction::Skip).unwrap();
+    assert_player_moves(&game, 2, Some(0));
     assert_eq!(
-        game.players[2].moves_left,
-        Some(0),
-        "player 2 did not have - move left, had {:?}",
-        game.players[2].moves_left
+        //                                                           which ends the game
+        game.state,
+        GameState::Finished,
+        "the game state was not Finished, was {:?}",
+        game.state
     );
+
+    // same for an escape triggered by receiving the missing card
+    let mut game = basic_game(&vec![
+        vec!["2 h", "2 c", "2 d", "2 s"], //                         player 0 has the cards to escape
+        vec!["3 h", "3 c", "3 d", "a c"],
+        vec!["4 h", "4 c", "4 d", "k c"],
+    ]);
+    let missing_card = game.players[0].missing_part;
+    game.draw = Deck::of(vec![missing_card]);
+
+    game.process_player_action(0, PlayerAction::Scavenge) //         they scavenge
+        .unwrap();
+    game.process_player_action(
+        0,
+        PlayerAction::FinishScavenge { card: missing_card }, //      and find their msising part
+    )
+    .unwrap();
+    assert!(game.players[0].escaped, "player 0 was not escaped"); // which lets them to escape, triggering the end game
+    assert_player_moves(&game, 1, Some(1)); //                       the other players have 1 move left
+    assert_player_moves(&game, 2, Some(1));
+    game.process_player_action(1, PlayerAction::Skip).unwrap(); //   and they skip
+    assert_player_moves(&game, 1, Some(0)); //                       using up their last move
+    game.process_player_action(2, PlayerAction::Skip).unwrap();
+    assert_player_moves(&game, 2, Some(0));
     assert_eq!(
-        //                                                         which ends the game
+        //                                                           which ends the game
         game.state,
         GameState::Finished,
         "the game state was not Finished, was {:?}",
@@ -688,6 +698,15 @@ fn assert_collection_does_not_have_cards(
                 .join(", "),
         );
     }
+}
+
+fn assert_player_moves(game: &Gameplay, player: usize, moves: Option<u32>) {
+    let actual_moves_left: Option<u32> = game.players[player].moves_left;
+    assert_eq!(
+        actual_moves_left, moves,
+        "player {} did not have {:?} move left, had {:?}",
+        player, moves, actual_moves_left,
+    );
 }
 
 fn c(card_str: &str) -> Card {
