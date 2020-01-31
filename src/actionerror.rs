@@ -1,9 +1,12 @@
+//! Defines the `ActionError` type, which is the set of possible error messages that can happen
+//! when processing an action from a player.
+
 use crate::cards::*;
 use std::fmt;
 
-/// If the action specified in [`process_player_action`](struct.Gameplay.html#method.process_player_action) cannot be
-/// completed, this type describes why. These roughly reflect the possible precondition failures described in the
-/// [`PlayerAction`](enum.PlayerAction.html) instance docs.
+/// If the action specified in [`process_player_action`](../gameplay/struct.Gameplay.html#method.process_player_action)
+/// cannot be completed, this type describes why. These roughly reflect the possible precondition failures described in
+/// the [`PlayerAction`](../playeraction/enum.PlayerAction.html) instance docs.
 ///
 /// In general these can be prevented by providing a user experience that prevents the user from attempting an invalid
 /// action. If an action error is received the player must try to give a new action, since the game state had not
@@ -11,24 +14,26 @@ use std::fmt;
 #[derive(Debug, PartialEq)]
 pub enum ActionError {
     /// There are no cards in the draw pile (for example when trying to use
-    /// [`Scavenge`](enum.PlayerAction.html#variant.Scavenge)).
+    /// [`Scavenge`](../playeraction/enum.PlayerAction.html#variant.Scavenge)).
     DeckEmpty,
 
-    /// The specified other player (e.g when trying to use [`Share`](enum.PlayerAction.html#variant.Share) or
-    /// [`Trade`](enum.PlayerAction.html#variant.Trade), etc) had already escaped.
+    /// The specified other player (e.g when trying to use
+    /// [`Share`](../playeraction/enum.PlayerAction.html#variant.Share) or
+    /// [`Trade`](../playeraction/enum.PlayerAction.html#variant.Trade), etc) had already escaped.
     PlayerEscaped {
         /// Who was the other player who's already escaped.
         escaped_player: usize,
     },
 
-    /// When using [`Scrap`](enum.PlayerAction.html#variant.Scrap), the player tried to pick a card from the discard pile that is not actually there.
+    /// When using [`Scrap`](../playeraction/enum.PlayerAction.html#variant.Scrap), the player tried to pick a card
+    /// from the discard pile that is not actually there.
     CardIsNotInDiscard {
         /// The card that the player tried to pick from discard pile, but it isn't actually there.
         card: Card,
     },
 
-    /// When using [`Scrap`](enum.PlayerAction.html#variant.Scrap), the player specified `num_specified` cards, but
-    /// exactly `num_needed` is needed to complete the scrap.
+    /// When using [`Scrap`](../playeraction/enum.PlayerAction.html#variant.Scrap), the player specified `num_specified`
+    /// cards, but exactly `num_needed` is needed to complete the scrap.
     WrongNumberOfCardsToScrap {
         /// How many cards the player tried to scrap.
         num_specified: u32,
@@ -38,7 +43,7 @@ pub enum ActionError {
     },
 
     /// When trying to use an action that requires a specific card to be in the possession of a player (e.g.
-    /// [`Trade`](enum.PlayerAction.html#variant.Trade)) the card was actually not with that player.
+    /// [`Trade`](../playeraction/enum.PlayerAction.html#variant.Trade)) the card was actually not with that player.
     CardIsNotWithPlayer {
         /// Whether the player who did not have the required card was the same player as the one initiating the action.
         /// (This is useful to provide a more natural error message, by being able to say "you" instead of "player
@@ -52,8 +57,8 @@ pub enum ActionError {
         card: Card,
     },
 
-    /// The player tried to [`Escape`](enum.PlayerAction.html#variant.Escape), but the escape condition was not
-    /// satisfied. (The player did not have all 4 suits of the same rank.)
+    /// The player tried to [`Escape`](../playeraction/enum.PlayerAction.html#variant.Escape), but the escape condition
+    /// was not satisfied. (The player did not have all 4 suits of the same rank.)
     EscapeConditionNotSatisfied,
 
     /// A player treid to make an action out of their turn, or tried to use an action not appropriate for the current
@@ -64,8 +69,8 @@ pub enum ActionError {
         player: usize,
     },
 
-    /// When trying to [`FinishScavenge`](enum.PlayerAction.html#variant.FinishScavenge), the card specified in the
-    /// action was not actually one of the cards scavenged.
+    /// When trying to [`FinishScavenge`](../playeraction/enum.PlayerAction.html#variant.FinishScavenge), the card
+    /// specified in the action was not actually one of the cards scavenged.
     CardWasNotScavenged {
         /// The card that the player wanted to keep, but wasn't actually in the scavenged cards.
         card: Card,

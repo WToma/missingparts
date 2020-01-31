@@ -1,4 +1,4 @@
-//! Defintes the actions available during the game.
+//! Defines the `PlayerAction` type, which represents the actions available during the game.
 
 use crate::cards::*;
 use std::convert::TryFrom;
@@ -12,9 +12,10 @@ use std::convert::TryFrom;
 ///   scavenging (pick which card to keep) or trading (the offer must be accepted or rejected).
 ///
 /// Unless otherwise indicated for a variant, it's a turn action. For completing actions the variant-level documentation
-/// will indicate for which [`GameState`](enum.GameState.html) they are valid.
+/// will indicate for which [`GameState`](../gameplay/enum.GameState.html) they are valid.
 ///
-/// The actions can be used with [`Gameplay::process_player_action`](struct.Gameplay.html#method.process_player_action).
+/// The actions can be used with
+/// [`Gameplay::process_player_action`](../gameplay/struct.Gameplay.html#method.process_player_action).
 /// In general only the player whose turn it is according to the game state can make actions. There are some exceptions,
 /// this is indicated on the action-level documentation.
 ///
@@ -30,8 +31,9 @@ pub enum PlayerAction {
     /// - the draw pile must not be empty.
     ///
     /// Effect: the game state changes to
-    /// [`WaitingForScavengeComplete`](enum.GameState.html#variant.WaitingForScavengeComplete), which indicates which
-    /// cards have been drawn from the draw pile. To complete the turn, use [`FinishScavenge`](#variant.FinishScavenge).
+    /// [`WaitingForScavengeComplete`](../gameplay/enum.GameState.html#variant.WaitingForScavengeComplete), which
+    /// indicates which cards have been drawn from the draw pile. To complete the turn, use
+    /// [`FinishScavenge`](#variant.FinishScavenge).
     ///
     /// Parsing example:
     /// ```
@@ -45,7 +47,8 @@ pub enum PlayerAction {
     /// Pick which scavenged cards to keep.
     ///
     /// Preconditions:
-    /// - the game state must be [`WaitingForScavengeComplete`](enum.GameState.html#variant.WaitingForScavengeComplete)
+    /// - the game state must be
+    /// [`WaitingForScavengeComplete`](../gameplay/enum.GameState.html#variant.WaitingForScavengeComplete)
     /// and the `card` specified in this action must be one of the cards in the state.
     ///
     /// Effect: the `card` specified in this action will move to the player's hand, the other cards from the game state,
@@ -84,8 +87,8 @@ pub enum PlayerAction {
     /// - the specified other player must not have escaped
     ///
     /// Effect: the game state goes to
-    /// [`WaitingForTradeConfirmation`](enum.GameState.html#variant.WaitingForTradeConfirmation), which indicates who
-    /// needs to approve the transaction, and what was the offer made. The turn can be completed by
+    /// [`WaitingForTradeConfirmation`](../gameplay/enum.GameState.html#variant.WaitingForTradeConfirmation), which
+    /// indicates who needs to approve the transaction, and what was the offer made. The turn can be completed by
     /// [`TradeAccept`](#variant.TradeAccept) or [`TradeReject`](#variant.TradeReject).
     ///
     /// Parsing example:
@@ -116,7 +119,8 @@ pub enum PlayerAction {
     /// Accept the trade offer
     ///
     /// Preconditions:
-    /// - the game state is [`WaitingForTradeConfirmation`](enum.GameState.html#variant.WaitingForTradeConfirmation),
+    /// - the game state is
+    /// [`WaitingForTradeConfirmation`](../gameplay/enum.GameState.html#variant.WaitingForTradeConfirmation),
     /// and the action is made by the player indicated in the state.
     ///
     /// Effect:
@@ -129,12 +133,13 @@ pub enum PlayerAction {
     ///
     ///
     /// Preconditions:
-    /// - the game state is [`WaitingForTradeConfirmation`](enum.GameState.html#variant.WaitingForTradeConfirmation),
+    /// - the game state is
+    /// [`WaitingForTradeConfirmation`](../gameplay/enum.GameState.html#variant.WaitingForTradeConfirmation),
     /// and the action is made by the player indicated in the state.
     ///
     /// Effect: the game state goes back to
-    /// [`WaitingForPlayerAction`](enum.GameState.html#variant.WaitingForPlayerAction). So the player who initated the
-    /// trade that got rejected gets to pick another action.
+    /// [`WaitingForPlayerAction`](../gameplay/enum.GameState.html#variant.WaitingForPlayerAction). So the player who
+    /// initated the trade that got rejected gets to pick another action.
     TradeReject,
 
     /// Steal a card from another player
@@ -277,7 +282,7 @@ pub struct TradeOffer {
     /// This is the card that the initiator of the play is willing to give up.
     pub offered: Card,
 
-    // This is the card required from the other party in the trade.
+    /// This is the card required from the other party in the trade.
     pub in_exchange: Card,
 }
 

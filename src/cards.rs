@@ -1,3 +1,5 @@
+//! Defines primitives for working with cards.
+
 use rand::Rng;
 use std::convert::TryFrom;
 use std::fmt;
