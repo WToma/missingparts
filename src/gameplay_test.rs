@@ -1,32 +1,41 @@
 use super::*;
 use std::convert::TryFrom;
 
-/// Test that for each precondition of each action, if the precondition is not satisfied, the action fails
-/// with the appropriate error.
+// Test that for each precondition of each action, if the precondition is not satisfied, the action fails
+// with the appropriate error.
+
 #[test]
-fn preconditions() {
-    // All turn actions:
-    // see: test_turn_actions_preconditions
-
-    // Scavenge
+fn precondition_scavenge() {
     test_precondition_empty_deck(SCAVENGE);
+}
 
-    // FinishScavenge
+#[test]
+fn precondition_finish_scavenge_wrong_state() {
     test_precondition_completion_wrong_state(PlayerAction::FinishScavenge { card: c("q c") });
+}
+
+#[test]
+fn precondition_finish_scavenge_wrong_player() {
     test_precondition(
         1,                                              // player 1
         action_finish_scavenge("q c"),                  // trying to finish a scavenge
         |mut g| g.state = state_scavenged(0, &["q c"]), // but it's player 0's turn to finish the scavenge
         ActionError::NotPlayersTurn { player: 1 },
     );
+}
+
+#[test]
+fn precondition_finish_scavenge_wrong_card() {
     test_precondition(
         0,                                              // player 0
         action_finish_scavenge("q c"), //                  trying to accept Queen of Clubs from scavenge
         |mut g| g.state = state_scavenged(0, &["k c"]), // but the scavenge only contained King of Clubs
         ActionError::CardWasNotScavenged { card: c("q c") },
     );
+}
 
-    // Trade
+#[test]
+fn precondition_trade_wrong_card_from_player() {
     test_precondition_as(
         0,     //                                                            player 0
         TRADE, //                                                            trying to trade 2 h
@@ -39,6 +48,10 @@ fn preconditions() {
             card: c("2 h"),
         },
     );
+}
+
+#[test]
+fn precondition_trade_wrong_card_from_other_player() {
     test_precondition_as(
         0,     //                                                            player 0
         TRADE, //                                                            trying to trade player 1 for 3h
@@ -51,18 +64,30 @@ fn preconditions() {
             card: c("3 h"),
         },
     );
+}
+
+#[test]
+fn precondition_trade_escaped() {
     test_precondition_as(
         0,                               // player 0
         TRADE,                           // trying to trade with player 1
         |g| g.players[1].escaped = true, // but they already escaped
         ActionError::PlayerEscaped { escaped_player: 1 },
     );
+}
+
+#[test]
+fn precondition_trade_self() {
     test_precondition_as(
         0,                              // player 0
         "trade 0 offering 2 h for 2 c", // trying to trade with themselves
         |_| (),
         ActionError::SelfTargeting,
     );
+}
+
+#[test]
+fn precondition_trade_nonexistent() {
     test_precondition_as(
         0,                              // player 0
         "trade 9 offering 2 h for 4 h", // trying to trade with a non-existent player
@@ -71,39 +96,65 @@ fn preconditions() {
             non_existent_player: 9,
         },
     );
+}
 
-    // TradeAccept
+#[test]
+fn precondition_trade_accept_wrong_state() {
     test_precondition_completion_wrong_state(PlayerAction::TradeAccept);
+}
+
+#[test]
+fn precondition_trade_accept_self() {
     test_precondition(
         1,                                                   // player 1
         PlayerAction::TradeAccept,                           // trying to finish a trade
         |mut g| g.state = state_trading(1, 0, "3 h", "2 h"), // that they started themselves
         ActionError::NotPlayersTurn { player: 1 },
     );
+}
 
-    // TradeReject
+#[test]
+fn precondition_trade_reject_wrong_state() {
     test_precondition_completion_wrong_state(PlayerAction::TradeReject);
+}
+
+#[test]
+fn precondition_trade_reject_self() {
     test_precondition(
         1,                                                   // player 1
         PlayerAction::TradeReject,                           // trying to finish a trade
         |mut g| g.state = state_trading(1, 0, "3 h", "2 h"), // that they started themselves
         ActionError::NotPlayersTurn { player: 1 },
     );
+}
 
-    // Share
+#[test]
+fn precondition_share_empty_deck() {
     test_precondition_empty_deck(SHARE);
+}
+
+#[test]
+fn precondition_share_escaped() {
     test_precondition_as(
         0,                               // player 0
         SHARE,                           // trying to share with player 1
         |g| g.players[1].escaped = true, // but they already escaped
         ActionError::PlayerEscaped { escaped_player: 1 },
     );
+}
+
+#[test]
+fn precondition_share_self() {
     test_precondition_as(
         0,              // player 0
         "share with 0", // trying to trade with themselves
         |_| (),
         ActionError::SelfTargeting,
     );
+}
+
+#[test]
+fn precondition_share_non_existent() {
     test_precondition_as(
         0,              // player 0
         "share with 9", // trying to share with a non-existent player
@@ -112,8 +163,10 @@ fn preconditions() {
             non_existent_player: 9,
         },
     );
+}
 
-    // Steal
+#[test]
+fn precondition_steal_wrong_card() {
     test_precondition_as(
         0,     //                                                            player 0
         STEAL, //                                                            trying to steal 3 Hearts from player 1
@@ -126,18 +179,30 @@ fn preconditions() {
             card: c("3 h"),
         },
     );
+}
+
+#[test]
+fn precondition_steal_escaped() {
     test_precondition_as(
         0,                               // player 0
         STEAL,                           // trying to steal from player 1
         |g| g.players[1].escaped = true, // but they already escaped
         ActionError::PlayerEscaped { escaped_player: 1 },
     );
+}
+
+#[test]
+fn precondition_steal_self() {
     test_precondition_as(
         0,                  // player 0
         "steal 2 h from 0", // trying to steal from themselves
         |_| (),
         ActionError::SelfTargeting,
     );
+}
+
+#[test]
+fn precondition_steal_non_existent() {
     test_precondition_as(
         0,                  // player 0
         "share 9 d from 9", // trying to steal from a non-existent player
@@ -146,8 +211,10 @@ fn preconditions() {
             non_existent_player: 9,
         },
     );
+}
 
-    // Scrap
+#[test]
+fn precondition_scrap_wrong_number_of_cards() {
     test_precondition_as(
         0,                             //        player 0
         "scrap 2 h, 2 c, 2 d for q c", //        trying to scrap 3 cards
@@ -158,6 +225,10 @@ fn preconditions() {
             num_needed: 4,
         },
     );
+}
+
+#[test]
+fn precondition_scrap_not_enough_unique_cards() {
     test_precondition_as(
         0,                                  //   player 0
         "scrap 2 h, 2 h, 2 c, 2 d for q c", //   trying to scrap 4 cards, out of which only 3 are unique
@@ -168,6 +239,10 @@ fn preconditions() {
             num_needed: 4,
         },
     );
+}
+
+#[test]
+fn precondition_scrap_wrong_cards_from_player() {
     test_precondition_as(
         0,                                  // player 0
         "scrap 2 h, 2 c, 2 d, k d for q c", // trying to scrap some cards, including King of Diamonds
@@ -181,6 +256,10 @@ fn preconditions() {
             card: c("k d"),
         },
     );
+}
+
+#[test]
+fn precondition_scrap_wrong_card_in_scrap() {
     test_precondition_as(
         0,     //                                          player 0
         SCRAP, //                                          trying to scrap for Queen of Clubs
@@ -189,15 +268,18 @@ fn preconditions() {
         },
         ActionError::CardIsNotInDiscard { card: c("q c") },
     );
+}
 
-    // Escape
+#[test]
+fn precondition_escape() {
     test_precondition_as(0, ESCAPE, |_| (), ActionError::EscapeConditionNotSatisfied);
 }
 
-/// Tests that for each action when it is successfully executed, the game state transitions to the correct state,
-/// and any side effects by the action are correctly effected.
+// Tests that for each action when it is successfully executed, the game state transitions to the correct state,
+// and any side effects by the action are correctly effected.
+
 #[test]
-fn transitions() {
+fn transition_scavenge() {
     // Scavenge
     let game_after_scavenge = test_state_transition_as(
         0,                                                 //      player 0
@@ -218,7 +300,10 @@ fn transitions() {
     );
     assert_player_has_cards(&game_after_scavenge, 0, &["5 d"]); // after this player 0 has the card they chose
     assert_discard_has_cards(&game_after_scavenge, &["6 d", "7 d"]);
+}
 
+#[test]
+fn transition_scavenge_1card() {
     // same with just 1 card in the draw
     let game_after_scavenge = test_state_transition_as(
         0,        //                                               player 0
@@ -240,7 +325,10 @@ fn transitions() {
         &game_after_scavenge.discard.is_empty(), //                and the discard is still empty
         "the discard has cards somehow"
     );
+}
 
+#[test]
+fn transition_share() {
     // Share
     let game_after_share = test_state_transition_as(
         0,     //                                                      player 0
@@ -250,7 +338,10 @@ fn transitions() {
     );
     assert_player_has_cards(&game_after_share, 0, &["5 d", "6 d"]); // after this player 0 has the first 2 cards
     assert_player_has_cards(&game_after_share, 1, &["7 d"]); //        and player 1 has the 3rd
+}
 
+#[test]
+fn transition_share_2cards() {
     // same with just 2 cards in the draw
     let game_after_share = test_state_transition_as(
         0,     //                                                      player 0
@@ -267,7 +358,10 @@ fn transitions() {
         //                                                             enough cards to begin with
         "player 1 got some parts somehow",
     );
+}
 
+#[test]
+fn transition_trade_accept() {
     // Trade + TradeAccept
     let game_after_trade = test_state_transition_as(
         0,     //                                               player 0
@@ -288,7 +382,10 @@ fn transitions() {
     );
     assert_player_has_cards(&game_after_trade, 1, &["2 h"]); // and the trade takes place: player 1 gets 2 h
     assert_player_has_cards(&game_after_trade, 0, &["3 h"]); // and player 0 gets 3 h
+}
 
+#[test]
+fn transition_trade_reject() {
     // Trade + TradeReject
     let game_after_trade = test_state_transition_as(
         0,     //                                               player 0
@@ -307,7 +404,10 @@ fn transitions() {
     assert_player_does_not_have_cards(&game_after_trade, 1, &["2 h"]);
     assert_player_has_cards(&game_after_trade, 1, &["3 h"]); // or player 1
     assert_player_does_not_have_cards(&game_after_trade, 0, &["3 h"]);
+}
 
+#[test]
+fn transition_steal() {
     // Steal
     let game_after_steal = test_state_transition_as(
         0,     //                                                         player 0
@@ -317,7 +417,10 @@ fn transitions() {
     );
     assert_player_has_cards(&game_after_steal, 0, &["3 h"]); //           after that player 0 has 3 h
     assert_player_does_not_have_cards(&game_after_steal, 1, &["3 h"]); // and player one no longer has it
+}
 
+#[test]
+fn transition_scrap() {
     // Scrap
     let game_after_scrap = test_state_transition_as(
         0,     // player 0
@@ -329,7 +432,10 @@ fn transitions() {
     assert_discard_has_cards(&game_after_scrap, &["2 h", "2 c", "2 d", "a d"]);
     assert_player_has_cards(&game_after_scrap, 0, &["q c"]);
     assert_discard_does_not_have_cards(&game_after_scrap, &["q c"]);
+}
 
+#[test]
+fn transition_escape() {
     // Escape
     let game_after_escape = test_state_transition_as(
         0,      //                                                              player 0
@@ -341,7 +447,10 @@ fn transitions() {
         game_after_escape.players[0].escaped, //                                after that they're escaped
         "player 0 did not escape",
     );
+}
 
+#[test]
+fn transition_skip() {
     // Skip
     test_state_transition_as(
         0,    //                                            player 0
@@ -349,7 +458,10 @@ fn transitions() {
         |_| (),
         GameState::WaitingForPlayerAction { player: 1 }, // which ends their turn
     );
+}
 
+#[test]
+fn transition_cheat() {
     // Cheat
     let game_after_cheating = test_state_transition_as(
         0,               //                                         player 0
@@ -360,7 +472,8 @@ fn transitions() {
     assert_player_has_cards(&game_after_cheating, 0, &["10 d"]); // and they have 10 d
 }
 
-/// Test that players who have escaped our out of move are not scheduled for a turn
+// Test that players who have escaped our out of move are not scheduled for a turn
+
 #[test]
 fn skip_escaped_out_of_move_players() {
     let mut game = basic_game(&vec![
@@ -383,7 +496,10 @@ fn skip_escaped_out_of_move_players() {
         "the game state was not Finished, was {:?}",
         game.state
     );
+}
 
+#[test]
+fn skip_escaped_out_of_move_players_autoescape() {
     // same for an escape triggered by receiving the missing card
     let mut game = basic_game(&vec![
         vec!["2 h", "2 c", "2 d", "2 s"], //                         player 0 has the cards to escape
@@ -415,6 +531,8 @@ fn skip_escaped_out_of_move_players() {
         game.state
     );
 }
+
+// Other tests
 
 #[test]
 fn get_results() {
@@ -470,6 +588,8 @@ fn test_turn_action_preconditions() {
     // - player is out of moves
     // are covered by `skip_escaped_out_of_move_players`.
 }
+
+// Helpers
 
 fn test_turn_action_precondition_correct_player(action: &str) {
     test_precondition_as(
