@@ -342,9 +342,12 @@ impl Gameplay {
     ///         WaitingForPlayerAction { player } => {
     ///             let player = *player;
     ///
-    ///             // in both of these cases, in a real situation, prompt the player for another action.
-    ///             let player_action = PlayerAction::try_from("share 1").expect("valid action needed");
-    ///             game.process_player_action(player, player_action).expect("impossible action");
+    ///             // in both of these cases (could not parse action, or `process_player_action`
+    ///             // returned an error), in a real situation prompt the player for another action.
+    ///             let player_action = PlayerAction::try_from("share 1")
+    ///                 .expect("valid action needed");
+    ///             game.process_player_action(player, player_action)
+    ///                 .expect("impossible action");
     /// #           break;
     ///         },
     ///         Finished => break,
@@ -366,6 +369,8 @@ impl Gameplay {
     ///
     /// The player making the action is specified by `player_index`.
     ///
+    /// # Errors
+    ///
     /// If the action is impossible, the game state will not change, and an error is returned. If an error is not
     /// returned then the action is completed as soon as `process_player_action` returns, and the update should be
     /// reflected in the state returned by `get_state`.
@@ -382,9 +387,12 @@ impl Gameplay {
     ///         WaitingForPlayerAction { player } => {
     ///             let player = *player;
     ///
-    ///             // in both of these cases, in a real situation, prompt the player for another action.
-    ///             let player_action = PlayerAction::try_from("share 1").expect("valid action needed");
-    ///             game.process_player_action(player, player_action).expect("impossible action");
+    ///             // in both of these cases (could not parse action, or `process_player_action`
+    ///             // returned an error), in a real situation prompt the player for another action.
+    ///             let player_action = PlayerAction::try_from("share 1")
+    ///                 .expect("valid action needed");
+    ///             game.process_player_action(player, player_action)
+    ///                 .expect("impossible action");
     /// #           break;
     ///         },
     ///         Finished => break,
