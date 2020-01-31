@@ -257,6 +257,7 @@ impl Deck {
     /// let mut deck = Deck::of(vec![card("2 of Hearts"), card("3 of Hearts"), card("4 of Hearts")]);
     /// assert_eq!(*(deck.remove_top(1).first().unwrap()), card("2 of Hearts"));
     /// ```
+    #[allow(dead_code)] // used in doc comment and tests
     pub fn of(cards: Vec<Card>) -> Deck {
         Deck {
             shuffled_cards: cards,
