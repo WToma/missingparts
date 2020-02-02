@@ -1,13 +1,9 @@
 use std::convert::TryFrom;
 use std::io;
 
-mod actionerror;
-mod cards;
-mod gameplay;
-mod playeraction;
-use crate::cards::Card;
-use crate::gameplay::*;
-use crate::playeraction::*;
+use missingparts::cards::Card;
+use missingparts::gameplay::*;
+use missingparts::playeraction::*;
 
 fn main() {
     println!("Missing Parts! -- the command line game");
