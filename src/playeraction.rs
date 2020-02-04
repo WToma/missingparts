@@ -1,6 +1,7 @@
 //! Defines the `PlayerAction` type, which represents the actions available during the game.
 
 use crate::cards::*;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 /// The various actions that a player can make during their turn, and also some actions that can be used to complete
@@ -23,7 +24,7 @@ use std::convert::TryFrom;
 /// examples for each action of a valid string that can be parsed into that action. If the parsing fails, a human
 /// readable (English) error message is returned that should explain what the problem is, and what would be a valid
 /// version of the action. This can be shown on the user interface.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Deserialize)]
 pub enum PlayerAction {
     /// Pick one of the top 3 cards from the draw pile.
     ///
@@ -277,7 +278,7 @@ pub enum PlayerAction {
 /// For example, if _player A_ has cards `[4 of Clubs, 2 of Hearts]`, and _player B_ has `[6 of Diamonds, Ace of
 /// Spades]`, and it's _player A_'s turn, a valid trade offer _player A_ could make to _player B_ would be `offered=4
 /// of Clubs, in_exchange=Ace of Spades`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub struct TradeOffer {
     /// This is the card that the initiator of the play is willing to give up.
     pub offered: Card,

@@ -5,6 +5,7 @@
 use crate::actionerror::*;
 use crate::cards::*;
 use crate::playeraction::*;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -105,7 +106,7 @@ impl Player {
 }
 
 /// The part of the game's observable state that determines which actions or multi-part completing actions can be taken.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Serialize)]
 pub enum GameState {
     /// The game is waiting for a turn action from `player` (see [`PlayerAction`](enum.PlayerAction.html)).
     WaitingForPlayerAction {
@@ -155,50 +156,6 @@ pub struct Gameplay {
     state: GameState,
 }
 
-impl fmt::Display for Gameplay {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (i, player) in self.players.iter().enumerate() {
-            let in_game_or_escaped = if player.escaped {
-                "escaped".to_string()
-            } else {
-                player
-                    .moves_left
-                    .map(|x| x.to_string() + " moves left")
-                    .unwrap_or("in game".to_string())
-            };
-            write!(f, "Player {} ({}) has ", i, in_game_or_escaped)?;
-            let cards = &player.gathered_parts;
-            if !cards.is_empty() {
-                card_list(&cards, f)?;
-            } else {
-                write!(f, "nothing")?;
-            }
-            write!(f, "\n")?;
-        }
-
-        write!(f, "The discard pile has ")?;
-        if !self.discard.is_empty() {
-            card_list(&self.discard, f)?;
-        } else {
-            write!(f, "nothing")?;
-        }
-        write!(f, "\n")?;
-
-        write!(f, "The deck has {} cards left\n", self.draw.len())
-    }
-}
-fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
-    for (i, card) in cards.iter().enumerate() {
-        if i > 0 {
-            write!(f, ", ")?;
-        }
-
-        write!(f, "{}", card)?;
-    }
-
-    fmt::Result::Ok(())
-}
-
 // TODO: since this is inefficient, all places that use this should instead use a different data type
 /// Removes an element equal to `to_remove` from `v`, returning the removed element. Returns `None` and leaves `v`
 /// intact if `to_remove` is not in `v`.
@@ -242,18 +199,6 @@ fn vec_remove_top_n<T>(v: &mut Vec<T>, n: usize) -> Vec<T> {
         result.push(v.remove(0));
     }
     result
-}
-
-/// A short summary of the results fo the game, once the game is finished.
-pub struct GameResults {
-    /// Players who have escaped, and have their missing part.
-    pub winners: Vec<usize>,
-
-    /// Players who have escaped, but do not have their missing part.
-    pub escaped_but_not_winner: Vec<usize>,
-
-    /// Players who did not escape.
-    pub stuck: Vec<usize>,
 }
 
 impl Gameplay {
@@ -320,6 +265,23 @@ impl Gameplay {
             winners,
             escaped_but_not_winner,
             stuck,
+        }
+    }
+
+    pub fn describe(&self) -> GameDescription {
+        GameDescription {
+            num_cards_in_draw: self.draw.len(),
+            discard: self.discard.clone(),
+            state: self.state.clone(),
+            players: self
+                .players
+                .iter()
+                .map(|p| PlayerDescription {
+                    gathered_parts: p.gathered_parts.clone(),
+                    escaped: p.escaped,
+                    moves_left: p.moves_left.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -765,6 +727,97 @@ impl Gameplay {
             })
         }
     }
+}
+
+/// A description, or observable state, of a player that can be shown to all players. Obtain an instance from
+/// [`GameDescription`](struct.GameDescription.html).
+#[derive(Serialize)]
+pub struct PlayerDescription {
+    /// The cards that the player has.
+    pub gathered_parts: Vec<Card>,
+
+    /// Whether the player have escaped or not.
+    pub escaped: bool,
+
+    /// During the end-game players have a limited number of moves, this shows how many moves this particular
+    /// player has left:
+    /// - `None` means unlimited (i.e. the game has not entered the end-game phase yet)
+    /// - `Some(0)` means they're out of moves.
+    /// - `Some(positive_value)` means that they have `positive_value` moves left.
+    pub moves_left: Option<u32>,
+}
+
+/// A description, or observable state, of the game that can be shown to all players.
+#[derive(Serialize)]
+pub struct GameDescription {
+    /// The number of cards in the draw deck
+    pub num_cards_in_draw: usize,
+
+    /// The cards in the discard pile
+    pub discard: Vec<Card>,
+
+    /// The observable state of each player. The indices into this `Vec` are the player IDs.
+    pub players: Vec<PlayerDescription>,
+
+    /// Determines the next action that can be taken.
+    pub state: GameState,
+}
+
+impl fmt::Display for GameDescription {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (i, player) in self.players.iter().enumerate() {
+            let in_game_or_escaped = if player.escaped {
+                "escaped".to_string()
+            } else {
+                player
+                    .moves_left
+                    .map(|x| x.to_string() + " moves left")
+                    .unwrap_or("in game".to_string())
+            };
+            write!(f, "Player {} ({}) has ", i, in_game_or_escaped)?;
+            let cards = &player.gathered_parts;
+            if !cards.is_empty() {
+                card_list(&cards, f)?;
+            } else {
+                write!(f, "nothing")?;
+            }
+            write!(f, "\n")?;
+        }
+
+        write!(f, "The discard pile has ")?;
+        if !self.discard.is_empty() {
+            card_list(&self.discard, f)?;
+        } else {
+            write!(f, "nothing")?;
+        }
+        write!(f, "\n")?;
+
+        write!(f, "The deck has {} cards left\n", self.num_cards_in_draw)
+    }
+}
+fn card_list(cards: &[Card], f: &mut fmt::Formatter) -> fmt::Result {
+    for (i, card) in cards.iter().enumerate() {
+        if i > 0 {
+            write!(f, ", ")?;
+        }
+
+        write!(f, "{}", card)?;
+    }
+
+    fmt::Result::Ok(())
+}
+
+/// A short summary of the results fo the game, once the game is finished.
+#[derive(Serialize)]
+pub struct GameResults {
+    /// Players who have escaped, and have their missing part.
+    pub winners: Vec<usize>,
+
+    /// Players who have escaped, but do not have their missing part.
+    pub escaped_but_not_winner: Vec<usize>,
+
+    /// Players who did not escape.
+    pub stuck: Vec<usize>,
 }
 
 #[cfg(test)]

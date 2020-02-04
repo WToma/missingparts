@@ -1,6 +1,7 @@
 //! Defines primitives for working with cards.
 
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
 
@@ -8,7 +9,7 @@ use std::fmt;
 ///
 /// Note: for programming purposes, `Suit` should be treated as a scalar, therefore the `Clone` and `Copy`
 /// traits are derived.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Suit {
     Clubs,
     Diamonds,
@@ -64,7 +65,7 @@ impl TryFrom<&str> for Suit {
 ///
 /// Note: for programming purposes, `Rank` should be treated as a scalar, therefore the `Clone` and `Copy`
 /// traits are derived.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Rank {
     Ace,
     Two,
@@ -139,7 +140,6 @@ impl TryFrom<&str> for Rank {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 /// A single piece of card in a 52-piece French deck.
 ///
 /// Note: for programming purposes, `Card` should be treated as a scalar, therefore the `Clone` and `Copy`
@@ -158,6 +158,7 @@ impl TryFrom<&str> for Rank {
 /// assert_eq!(Card::try_from("2 h").unwrap(), Card { suit: Hearts, rank: Two });
 /// assert_eq!(Card::try_from("two hearts").unwrap(), Card { suit: Hearts, rank: Two });
 /// ```
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, Serialize, Deserialize)]
 pub struct Card {
     pub suit: Suit,
     pub rank: Rank,

@@ -33,7 +33,7 @@ fn main() {
         match gameplay.get_state() {
             GameState::WaitingForPlayerAction { player } => {
                 let player = *player;
-                println!("{}", gameplay);
+                println!("{}", gameplay.describe());
 
                 let mut player_made_valid_move = false;
                 while !player_made_valid_move {

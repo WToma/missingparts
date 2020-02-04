@@ -2,6 +2,7 @@
 //! when processing an action from a player.
 
 use crate::cards::*;
+use serde::Serialize;
 use std::fmt;
 
 /// If the action specified in [`process_player_action`](../gameplay/struct.Gameplay.html#method.process_player_action)
@@ -11,7 +12,7 @@ use std::fmt;
 /// In general these can be prevented by providing a user experience that prevents the user from attempting an invalid
 /// action. If an action error is received the player must try to give a new action, since the game state had not
 /// advanced.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub enum ActionError {
     /// There are no cards in the draw pile (for example when trying to use
     /// [`Scavenge`](../playeraction/enum.PlayerAction.html#variant.Scavenge)).
