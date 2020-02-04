@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 rand = "0.5.5"
 serde = { version = "1.0.x", features = ["derive"] }
+tokio = { version = "0.2", features = ["macros"] }
+warp = "0.2"
 
 [profile.dev]
 opt-level = 0      # controls the `--opt-level` the compiler builds with.
