@@ -8,6 +8,9 @@ use warp::Filter;
 async fn main() {
     let games_mutex: Arc<Mutex<Vec<(Gameplay, Vec<Card>)>>> = Arc::new(Mutex::new(Vec::new()));
 
+    // TODO: the handler panic leaves the server in a zombie state
+    //   need to handle panics within each handler!
+
     let games_mutex_for_handler = Arc::clone(&games_mutex);
     let get_game = warp::get()
         .and(warp::path!("games" / usize))
@@ -35,7 +38,20 @@ async fn main() {
             )
         });
 
-    let games = get_game.or(create_game);
+    let games_mutex_for_handler = Arc::clone(&games_mutex);
+    let get_private_card = warp::get()
+        .and(warp::path!("games" / usize / "players" / usize / "private"))
+        .map(move |game_id, player_id| {
+            let games: &Vec<(Gameplay, Vec<Card>)> = &games_mutex_for_handler.lock().unwrap();
+            let game_and_cards: &(Gameplay, Vec<Card>) = &games[game_id];
+            let cards: &Vec<Card> = &game_and_cards.1;
+            let player_card = &cards[player_id];
+            warp::reply::json(&PrivateCardResponse {
+                missing_part: *player_card,
+            })
+        });
+
+    let games = get_game.or(create_game).or(get_private_card);
 
     warp::serve(games).run(([127, 0, 0, 1], 3030)).await;
 }
@@ -48,4 +64,9 @@ struct CreateGameRequest {
 #[derive(Serialize)]
 struct CreateGameResponse {
     id: usize,
+}
+
+#[derive(Serialize)]
+struct PrivateCardResponse {
+    missing_part: Card,
 }
