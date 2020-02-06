@@ -268,6 +268,8 @@ impl Gameplay {
         }
     }
 
+    /// Returns a safely sharable description of the game. This is independent of the actual game state, so feel free
+    /// to mutate it. It can also be shown to all players.
     pub fn describe(&self) -> GameDescription {
         GameDescription {
             num_cards_in_draw: self.draw.len(),

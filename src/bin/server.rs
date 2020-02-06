@@ -28,7 +28,11 @@ async fn main() {
                 &mut games_mutex_for_handler.lock().unwrap();
             let new_index = games.len();
             games.push(Gameplay::init(request.num_players));
-            warp::reply::json(&CreateGameResponse { id: new_index })
+            let reply_body = warp::reply::json(&CreateGameResponse { id: new_index });
+            warp::reply::with_status(
+                warp::reply::with_header(reply_body, "Location", format!("/games/{}", new_index)),
+                warp::http::StatusCode::CREATED,
+            )
         });
 
     let games = get_game.or(create_game);
