@@ -1,5 +1,6 @@
 use missingparts::cards::Card;
 use missingparts::gameplay::Gameplay;
+use missingparts::playeraction::PlayerAction;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use warp::Filter;
@@ -51,7 +52,34 @@ async fn main() {
             })
         });
 
-    let games = get_game.or(create_game).or(get_private_card);
+    let games_mutex_for_handler = Arc::clone(&games_mutex);
+    let make_move = warp::post()
+        .and(warp::path!("games" / usize / "players" / usize / "moves"))
+        .and(warp::body::content_length_limit(1024 * 16))
+        .and(warp::body::json())
+        .map(move |game_id, player_id, player_action: PlayerAction| {
+            let games: &mut Vec<(Gameplay, Vec<Card>)> =
+                &mut games_mutex_for_handler.lock().unwrap();
+            let game_and_cards: &mut (Gameplay, Vec<Card>) = &mut games[game_id];
+            let game: &mut Gameplay = &mut game_and_cards.0;
+            let action_result = game.process_player_action(player_id, player_action);
+            match action_result {
+                Ok(_) => warp::reply::with_status(
+                    // TODO: use proper error handling instead. but that's hard to implement
+                    // both arms of the match need to result the _exact same type_ otherwise the type
+                    // checker complains
+                    warp::reply::json(&()),
+                    warp::http::StatusCode::OK,
+                ),
+
+                Err(action_error) => warp::reply::with_status(
+                    warp::reply::json(&action_error),
+                    warp::http::StatusCode::BAD_REQUEST,
+                ),
+            }
+        });
+
+    let games = get_game.or(create_game).or(get_private_card).or(make_move);
 
     warp::serve(games).run(([127, 0, 0, 1], 3030)).await;
 }
