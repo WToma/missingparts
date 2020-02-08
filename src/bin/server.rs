@@ -125,9 +125,10 @@ impl Lobby {
     /// Returns the game ID for the given player, if one has been assigned.
     fn get_player_game(&self, player_id: usize) -> Option<PlayerAssignedToGame> {
         let players_waiting_for_game = self.players_waiting_for_game.lock().unwrap();
-        match players_waiting_for_game[player_id] {
-            LobbyPlayer::InGame(player_assigned_to_game) => Some(player_assigned_to_game),
-            _ => None,
+        if let LobbyPlayer::InGame(player_assigned_to_game) = players_waiting_for_game[player_id] {
+            Some(player_assigned_to_game)
+        } else {
+            None
         }
     }
 }
@@ -182,13 +183,13 @@ async fn main() {
             move |game_id, player_id, player_action: PlayerAction| -> Box<dyn warp::Reply> {
                 let action_result = games_mutex_for_handler
                     .with_mut_game(game_id, |g| g.make_move(player_id, player_action.clone()));
-                match action_result {
-                    Ok(_) => Box::new(warp::reply()),
-
-                    Err(action_error) => Box::new(warp::reply::with_status(
+                if let Err(action_error) = action_result {
+                    Box::new(warp::reply::with_status(
                         warp::reply::json(&action_error),
                         warp::http::StatusCode::BAD_REQUEST,
-                    )),
+                    ))
+                } else {
+                    Box::new(warp::reply())
                 }
             },
         );
@@ -215,26 +216,27 @@ async fn main() {
     let get_lobby_player_status = warp::get()
         .and(warp::path!("lobby" / "players" / usize / "game"))
         .map(move |player_id| -> Box<dyn warp::Reply> {
-            match lobby_for_handler.get_player_game(player_id) {
-                Some(player_assigned_to_game) => Box::new(warp::reply::with_status(
+            if let Some(PlayerAssignedToGame {
+                game_id,
+                player_id_in_game,
+            }) = lobby_for_handler.get_player_game(player_id)
+            {
+                Box::new(warp::reply::with_status(
                     warp::reply::with_header(
                         warp::reply::json(&JoinedGameResponse {
-                            game_id: player_assigned_to_game.game_id,
-                            player_id_in_game: player_assigned_to_game.player_id_in_game,
+                            game_id,
+                            player_id_in_game,
                         }),
                         "Location",
-                        format!(
-                            "/games/{}/players/{}/private",
-                            player_assigned_to_game.game_id,
-                            player_assigned_to_game.player_id_in_game
-                        ),
+                        format!("/games/{}/players/{}/private", game_id, player_id_in_game),
                     ),
                     warp::http::StatusCode::TEMPORARY_REDIRECT,
-                )),
-                None => Box::new(warp::reply::with_status(
+                ))
+            } else {
+                Box::new(warp::reply::with_status(
                     warp::reply(),
                     warp::http::StatusCode::NOT_FOUND,
-                )),
+                ))
             }
         });
 
