@@ -85,9 +85,19 @@ impl GameManager {
     }
 }
 
-struct LobbyPlayer {
-    min_game_size: usize,
-    max_game_size: usize,
+#[derive(Clone, Copy)]
+struct PlayerAssignedToGame {
+    game_id: usize,
+    player_id_in_game: usize,
+}
+
+enum LobbyPlayer {
+    WaitingForGame {
+        min_game_size: usize,
+        max_game_size: usize,
+    },
+
+    InGame(PlayerAssignedToGame),
 }
 
 /// Manages the players who are waiting to join a game. Safe to access concurrently.
@@ -105,11 +115,20 @@ impl Lobby {
     fn add_player(&self, min_game_size: usize, max_game_size: usize) -> usize {
         let players_waiting_for_game = &mut self.players_waiting_for_game.lock().unwrap();
         let player_id = players_waiting_for_game.len();
-        players_waiting_for_game.push(LobbyPlayer {
+        players_waiting_for_game.push(LobbyPlayer::WaitingForGame {
             min_game_size,
             max_game_size,
         });
         player_id
+    }
+
+    /// Returns the game ID for the given player, if one has been assigned.
+    fn get_player_game(&self, player_id: usize) -> Option<PlayerAssignedToGame> {
+        let players_waiting_for_game = self.players_waiting_for_game.lock().unwrap();
+        match players_waiting_for_game[player_id] {
+            LobbyPlayer::InGame(player_assigned_to_game) => Some(player_assigned_to_game),
+            _ => None,
+        }
     }
 }
 
@@ -178,19 +197,53 @@ async fn main() {
             }
         });
 
-    let games = get_game.or(create_game).or(get_private_card).or(make_move);
+    let game_actions = get_game.or(create_game).or(get_private_card).or(make_move);
 
     let lobby: Arc<Lobby> = Arc::new(Lobby::new());
+    let lobby_for_handler = Arc::clone(&lobby);
     let join_lobby = warp::post()
         .and(warp::path!("lobby"))
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
         .map(move |request: JoinLobbyRequest| {
-            warp::reply::json(&JoinedLobbyResponse {
-                id: lobby.add_player(request.min_game_size, request.max_game_size),
-            })
+            let player_id =
+                lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
+            warp::reply::with_header(
+                warp::reply::json(&JoinedLobbyResponse { id: player_id }),
+                "Location",
+                format!("lobby/players/{}/game", player_id),
+            )
         });
-    let all_actions = games.or(join_lobby);
+
+    let lobby_for_handler = Arc::clone(&lobby);
+    let get_lobby_player_status = warp::get()
+        .and(warp::path!("lobby" / "players" / usize / "game"))
+        .map(
+            move |player_id| match lobby_for_handler.get_player_game(player_id) {
+                Some(player_assigned_to_game) => warp::reply::with_status(
+                    warp::reply::with_header(
+                        warp::reply::json(&JoinedGameResponse {
+                            game_id: player_assigned_to_game.game_id,
+                            player_id_in_game: player_assigned_to_game.player_id_in_game,
+                        }),
+                        "Location",
+                        format!(
+                            "/games/{}/players/{}/private",
+                            player_assigned_to_game.game_id,
+                            player_assigned_to_game.player_id_in_game
+                        ),
+                    ),
+                    warp::http::StatusCode::SEE_OTHER,
+                ),
+                None => warp::reply::with_status(
+                    warp::reply::with_header(warp::reply::json(&()), "X-missingparts-foo", "bar"),
+                    warp::http::StatusCode::NOT_FOUND,
+                ),
+            },
+        );
+
+    let lobby_actions = join_lobby.or(get_lobby_player_status);
+    let all_actions = game_actions.or(lobby_actions);
 
     warp::serve(all_actions).run(([127, 0, 0, 1], 3030)).await;
 }
@@ -219,4 +272,10 @@ struct JoinLobbyRequest {
 #[derive(Serialize)]
 struct JoinedLobbyResponse {
     id: usize,
+}
+
+#[derive(Serialize)]
+struct JoinedGameResponse {
+    game_id: usize,
+    player_id_in_game: usize,
 }
