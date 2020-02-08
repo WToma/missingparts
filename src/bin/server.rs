@@ -1,3 +1,4 @@
+use chashmap::CHashMap;
 use missingparts::actionerror::ActionError;
 use missingparts::cards::Card;
 use missingparts::gameplay::{GameDescription, Gameplay};
@@ -45,36 +46,42 @@ impl ManagedGame {
 /// To start a new game under the manager, use `new_game`. After that use `with_game` for read-only
 /// operations on a game, or `with_mut_game` for read-write operations on a game.
 struct GameManager {
-    games: Mutex<Vec<ManagedGame>>,
+    games: CHashMap<usize, ManagedGame>,
+    next_game_index: Mutex<usize>,
 }
 
 impl GameManager {
     fn new() -> GameManager {
         GameManager {
-            games: Mutex::new(Vec::new()),
+            games: CHashMap::new(),
+            next_game_index: Mutex::new(0),
         }
     }
 
     /// Starts a new game, and returns the ID of the game that can be used with `with_game` and `with_mut_game`.
     fn new_game(&self, num_players: usize) -> usize {
-        let games: &mut Vec<ManagedGame> = &mut self.games.lock().unwrap();
-        let new_index = games.len();
-        games.push(ManagedGame::new(num_players));
-        new_index
+        let next_index = {
+            let mut next_game_index_ref = self.next_game_index.lock().unwrap();
+            let next_index = *next_game_index_ref;
+            *next_game_index_ref += 1;
+            next_index
+        };
+        self.games.insert(next_index, ManagedGame::new(num_players));
+        next_index
     }
 
     fn with_game<F, T>(&self, game_id: usize, f: F) -> T
     where
         F: Fn(&ManagedGame) -> T,
     {
-        f(&self.games.lock().unwrap()[game_id])
+        f(&self.games.get(&game_id).unwrap())
     }
 
     fn with_mut_game<F, T>(&self, game_id: usize, f: F) -> T
     where
         F: Fn(&mut ManagedGame) -> T,
     {
-        f(&mut self.games.lock().unwrap()[game_id])
+        f(&mut self.games.get_mut(&game_id).unwrap())
     }
 }
 
