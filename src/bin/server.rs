@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use warp::Filter;
 
+/// A single game that's managed by the `GameManager`.
 struct ManagedGame {
     gameplay: Gameplay,
     secret_cards_per_player: Vec<Card>,
@@ -38,9 +39,48 @@ impl ManagedGame {
     }
 }
 
+/// Manages games in the server. This is the primary way games should be interacted with.
+/// Safe for concurrent access.
+///
+/// To start a new game under the manager, use `new_game`. After that use `with_game` for read-only
+/// operations on a game, or `with_mut_game` for read-write operations on a game.
+struct GameManager {
+    games: Mutex<Vec<ManagedGame>>,
+}
+
+impl GameManager {
+    fn new() -> GameManager {
+        GameManager {
+            games: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Starts a new game, and returns the ID of the game that can be used with `with_game` and `with_mut_game`.
+    fn new_game(&self, num_players: usize) -> usize {
+        let games: &mut Vec<ManagedGame> = &mut self.games.lock().unwrap();
+        let new_index = games.len();
+        games.push(ManagedGame::new(num_players));
+        new_index
+    }
+
+    fn with_game<F, T>(&self, game_id: usize, f: F) -> T
+    where
+        F: Fn(&ManagedGame) -> T,
+    {
+        f(&self.games.lock().unwrap()[game_id])
+    }
+
+    fn with_mut_game<F, T>(&self, game_id: usize, f: F) -> T
+    where
+        F: Fn(&mut ManagedGame) -> T,
+    {
+        f(&mut self.games.lock().unwrap()[game_id])
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    let games_mutex: Arc<Mutex<Vec<ManagedGame>>> = Arc::new(Mutex::new(Vec::new()));
+    let games_mutex: Arc<GameManager> = Arc::new(GameManager::new());
 
     // TODO: the handler panic leaves the server in a zombie state
     //   need to handle panics within each handler!
@@ -50,9 +90,8 @@ async fn main() {
         .and(warp::path!("games" / usize))
         .map(move |game_id| {
             let id: usize = game_id;
-            let games: &Vec<ManagedGame> = &games_mutex_for_handler.lock().unwrap();
-            let game_and_cards: &ManagedGame = &games[id];
-            warp::reply::json(&game_and_cards.describe())
+            let description = games_mutex_for_handler.with_game(id, |g| g.describe());
+            warp::reply::json(&description)
         });
 
     let games_mutex_for_handler = Arc::clone(&games_mutex);
@@ -61,9 +100,7 @@ async fn main() {
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
         .map(move |request: CreateGameRequest| {
-            let games: &mut Vec<ManagedGame> = &mut games_mutex_for_handler.lock().unwrap();
-            let new_index = games.len();
-            games.push(ManagedGame::new(request.num_players));
+            let new_index = games_mutex_for_handler.new_game(request.num_players);
             let reply_body = warp::reply::json(&CreateGameResponse { id: new_index });
             warp::reply::with_status(
                 warp::reply::with_header(reply_body, "Location", format!("/games/{}", new_index)),
@@ -75,10 +112,10 @@ async fn main() {
     let get_private_card = warp::get()
         .and(warp::path!("games" / usize / "players" / usize / "private"))
         .map(move |game_id, player_id| {
-            let games: &Vec<ManagedGame> = &games_mutex_for_handler.lock().unwrap();
-            let game_and_cards: &ManagedGame = &games[game_id];
+            let private_card =
+                games_mutex_for_handler.with_game(game_id, |g| g.get_private_card(player_id));
             warp::reply::json(&PrivateCardResponse {
-                missing_part: *&game_and_cards.get_private_card(player_id),
+                missing_part: private_card,
             })
         });
 
@@ -88,9 +125,8 @@ async fn main() {
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
         .map(move |game_id, player_id, player_action: PlayerAction| {
-            let games: &mut Vec<ManagedGame> = &mut games_mutex_for_handler.lock().unwrap();
-            let game_and_cards: &mut ManagedGame = &mut games[game_id];
-            let action_result = game_and_cards.make_move(player_id, player_action);
+            let action_result = games_mutex_for_handler
+                .with_mut_game(game_id, |g| g.make_move(player_id, player_action.clone()));
             match action_result {
                 Ok(_) => warp::reply::with_status(
                     // TODO: use proper error handling instead. but that's hard to implement

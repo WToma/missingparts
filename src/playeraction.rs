@@ -24,7 +24,7 @@ use std::convert::TryFrom;
 /// examples for each action of a valid string that can be parsed into that action. If the parsing fails, a human
 /// readable (English) error message is returned that should explain what the problem is, and what would be a valid
 /// version of the action. This can be shown on the user interface.
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Clone)]
 pub enum PlayerAction {
     /// Pick one of the top 3 cards from the draw pile.
     ///
