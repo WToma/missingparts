@@ -85,6 +85,34 @@ impl GameManager {
     }
 }
 
+struct LobbyPlayer {
+    min_game_size: usize,
+    max_game_size: usize,
+}
+
+/// Manages the players who are waiting to join a game. Safe to access concurrently.
+struct Lobby {
+    players_waiting_for_game: Mutex<Vec<LobbyPlayer>>,
+}
+
+impl Lobby {
+    fn new() -> Lobby {
+        Lobby {
+            players_waiting_for_game: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn add_player(&self, min_game_size: usize, max_game_size: usize) -> usize {
+        let players_waiting_for_game = &mut self.players_waiting_for_game.lock().unwrap();
+        let player_id = players_waiting_for_game.len();
+        players_waiting_for_game.push(LobbyPlayer {
+            min_game_size,
+            max_game_size,
+        });
+        player_id
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let games_mutex: Arc<GameManager> = Arc::new(GameManager::new());
@@ -152,7 +180,19 @@ async fn main() {
 
     let games = get_game.or(create_game).or(get_private_card).or(make_move);
 
-    warp::serve(games).run(([127, 0, 0, 1], 3030)).await;
+    let lobby: Arc<Lobby> = Arc::new(Lobby::new());
+    let join_lobby = warp::post()
+        .and(warp::path!("lobby"))
+        .and(warp::body::content_length_limit(1024 * 16))
+        .and(warp::body::json())
+        .map(move |request: JoinLobbyRequest| {
+            warp::reply::json(&JoinedLobbyResponse {
+                id: lobby.add_player(request.min_game_size, request.max_game_size),
+            })
+        });
+    let all_actions = games.or(join_lobby);
+
+    warp::serve(all_actions).run(([127, 0, 0, 1], 3030)).await;
 }
 
 #[derive(Deserialize)]
@@ -168,4 +208,15 @@ struct CreateGameResponse {
 #[derive(Serialize)]
 struct PrivateCardResponse {
     missing_part: Card,
+}
+
+#[derive(Deserialize)]
+struct JoinLobbyRequest {
+    min_game_size: usize,
+    max_game_size: usize,
+}
+
+#[derive(Serialize)]
+struct JoinedLobbyResponse {
+    id: usize,
 }
