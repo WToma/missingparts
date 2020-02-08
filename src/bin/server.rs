@@ -229,7 +229,7 @@ async fn main() {
                             player_assigned_to_game.player_id_in_game
                         ),
                     ),
-                    warp::http::StatusCode::SEE_OTHER,
+                    warp::http::StatusCode::TEMPORARY_REDIRECT,
                 )),
                 None => Box::new(warp::reply::with_status(
                     warp::reply(),
