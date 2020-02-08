@@ -178,24 +178,20 @@ async fn main() {
         .and(warp::path!("games" / usize / "players" / usize / "moves"))
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
-        .map(move |game_id, player_id, player_action: PlayerAction| {
-            let action_result = games_mutex_for_handler
-                .with_mut_game(game_id, |g| g.make_move(player_id, player_action.clone()));
-            match action_result {
-                Ok(_) => warp::reply::with_status(
-                    // TODO: use proper error handling instead. but that's hard to implement
-                    // both arms of the match need to result the _exact same type_ otherwise the type
-                    // checker complains
-                    warp::reply::json(&()),
-                    warp::http::StatusCode::OK,
-                ),
+        .map(
+            move |game_id, player_id, player_action: PlayerAction| -> Box<dyn warp::Reply> {
+                let action_result = games_mutex_for_handler
+                    .with_mut_game(game_id, |g| g.make_move(player_id, player_action.clone()));
+                match action_result {
+                    Ok(_) => Box::new(warp::reply()),
 
-                Err(action_error) => warp::reply::with_status(
-                    warp::reply::json(&action_error),
-                    warp::http::StatusCode::BAD_REQUEST,
-                ),
-            }
-        });
+                    Err(action_error) => Box::new(warp::reply::with_status(
+                        warp::reply::json(&action_error),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )),
+                }
+            },
+        );
 
     let game_actions = get_game.or(create_game).or(get_private_card).or(make_move);
 
@@ -218,9 +214,9 @@ async fn main() {
     let lobby_for_handler = Arc::clone(&lobby);
     let get_lobby_player_status = warp::get()
         .and(warp::path!("lobby" / "players" / usize / "game"))
-        .map(
-            move |player_id| match lobby_for_handler.get_player_game(player_id) {
-                Some(player_assigned_to_game) => warp::reply::with_status(
+        .map(move |player_id| -> Box<dyn warp::Reply> {
+            match lobby_for_handler.get_player_game(player_id) {
+                Some(player_assigned_to_game) => Box::new(warp::reply::with_status(
                     warp::reply::with_header(
                         warp::reply::json(&JoinedGameResponse {
                             game_id: player_assigned_to_game.game_id,
@@ -234,13 +230,13 @@ async fn main() {
                         ),
                     ),
                     warp::http::StatusCode::SEE_OTHER,
-                ),
-                None => warp::reply::with_status(
-                    warp::reply::with_header(warp::reply::json(&()), "X-missingparts-foo", "bar"),
+                )),
+                None => Box::new(warp::reply::with_status(
+                    warp::reply(),
                     warp::http::StatusCode::NOT_FOUND,
-                ),
-            },
-        );
+                )),
+            }
+        });
 
     let lobby_actions = join_lobby.or(get_lobby_player_status);
     let all_actions = game_actions.or(lobby_actions);
