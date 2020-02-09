@@ -211,20 +211,6 @@ async fn main() {
         });
 
     let games_mutex_for_handler = Arc::clone(&games_mutex);
-    let create_game = warp::post()
-        .and(warp::path!("games"))
-        .and(warp::body::content_length_limit(1024 * 16))
-        .and(warp::body::json())
-        .map(move |request: CreateGameRequest| {
-            let new_index = games_mutex_for_handler.new_game(request.num_players);
-            let reply_body = warp::reply::json(&CreateGameResponse { id: new_index });
-            warp::reply::with_status(
-                warp::reply::with_header(reply_body, "Location", format!("/games/{}", new_index)),
-                warp::http::StatusCode::CREATED,
-            )
-        });
-
-    let games_mutex_for_handler = Arc::clone(&games_mutex);
     let get_private_card = warp::get()
         .and(warp::path!("games" / usize / "players" / usize / "private"))
         .map(move |game_id, player_id| {
@@ -255,7 +241,7 @@ async fn main() {
             },
         );
 
-    let game_actions = get_game.or(create_game).or(get_private_card).or(make_move);
+    let game_actions = get_game.or(get_private_card).or(make_move);
 
     let lobby: Arc<Lobby> = Arc::new(Lobby::new());
     let lobby_for_handler = Arc::clone(&lobby);
@@ -307,16 +293,6 @@ async fn main() {
     let all_actions = game_actions.or(lobby_actions);
 
     warp::serve(all_actions).run(([127, 0, 0, 1], 3030)).await;
-}
-
-#[derive(Deserialize)]
-struct CreateGameRequest {
-    num_players: usize,
-}
-
-#[derive(Serialize)]
-struct CreateGameResponse {
-    id: usize,
 }
 
 #[derive(Serialize)]
