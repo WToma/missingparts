@@ -254,11 +254,33 @@ async fn main() {
             let player_id_in_lobby =
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
             lobby_for_handler.start_games(&games_mutex_for_handler);
-            warp::reply::with_header(
-                warp::reply::json(&JoinedLobbyResponse { player_id_in_lobby }),
-                "Location",
-                format!("/lobby/players/{}/game", player_id_in_lobby),
-            )
+
+            if let Some(PlayerAssignedToGame {
+                game_id,
+                player_id_in_game,
+            }) = lobby_for_handler.get_player_game(player_id_in_lobby)
+            {
+                warp::reply::with_status(
+                    warp::reply::with_header(
+                        warp::reply::json(&JoinedGameResponse {
+                            game_id,
+                            player_id_in_game,
+                        }),
+                        "Location",
+                        format!("/games/{}/players/{}/private", game_id, player_id_in_game),
+                    ),
+                    warp::http::StatusCode::CREATED,
+                )
+            } else {
+                warp::reply::with_status(
+                    warp::reply::with_header(
+                        warp::reply::json(&JoinedLobbyResponse { player_id_in_lobby }),
+                        "Location",
+                        format!("/lobby/players/{}/game", player_id_in_lobby),
+                    ),
+                    warp::http::StatusCode::CREATED,
+                )
+            }
         });
 
     let lobby_for_handler = Arc::clone(&lobby);
