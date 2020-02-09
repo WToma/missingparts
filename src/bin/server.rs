@@ -2,7 +2,7 @@ use chashmap::CHashMap;
 use missingparts::actionerror::ActionError;
 use missingparts::cards::Card;
 use missingparts::gameplay::{GameDescription, Gameplay};
-use missingparts::gamesizepref::GameSizePreference;
+use missingparts::lobby::{GameCreator, Lobby, PlayerAssignedToGame};
 use missingparts::playeraction::PlayerAction;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -51,14 +51,7 @@ struct GameManager {
     next_game_index: Mutex<usize>,
 }
 
-impl GameManager {
-    fn new() -> GameManager {
-        GameManager {
-            games: CHashMap::new(),
-            next_game_index: Mutex::new(0),
-        }
-    }
-
+impl GameCreator for GameManager {
     /// Starts a new game, and returns the ID of the game that can be used with `with_game` and `with_mut_game`.
     fn new_game(&self, num_players: usize) -> usize {
         let next_index = {
@@ -69,6 +62,15 @@ impl GameManager {
         };
         self.games.insert(next_index, ManagedGame::new(num_players));
         next_index
+    }
+}
+
+impl GameManager {
+    fn new() -> GameManager {
+        GameManager {
+            games: CHashMap::new(),
+            next_game_index: Mutex::new(0),
+        }
     }
 
     fn with_game<F, T>(&self, game_id: usize, f: F) -> T
@@ -83,114 +85,6 @@ impl GameManager {
         F: Fn(&mut ManagedGame) -> T,
     {
         f(&mut self.games.get_mut(&game_id).unwrap())
-    }
-}
-
-#[derive(Clone, Copy)]
-struct PlayerAssignedToGame {
-    game_id: usize,
-    player_id_in_game: usize,
-}
-
-enum LobbyPlayer {
-    WaitingForGame {
-        player_id_in_lobby: usize,
-        game_size_preference: GameSizePreference,
-    },
-
-    InGame(PlayerAssignedToGame),
-}
-
-/// Manages the players who are waiting to join a game. Safe to access concurrently.
-struct Lobby {
-    players_waiting_for_game: Mutex<Vec<LobbyPlayer>>,
-}
-
-impl Lobby {
-    fn new() -> Lobby {
-        Lobby {
-            players_waiting_for_game: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn add_player(&self, min_game_size: usize, max_game_size: usize) -> usize {
-        let players_waiting_for_game = &mut self.players_waiting_for_game.lock().unwrap();
-        let player_id = players_waiting_for_game.len();
-        players_waiting_for_game.push(LobbyPlayer::WaitingForGame {
-            player_id_in_lobby: player_id,
-            game_size_preference: GameSizePreference {
-                min_game_size,
-                max_game_size,
-            },
-        });
-        player_id
-    }
-
-    /// Returns the game ID for the given player, if one has been assigned.
-    fn get_player_game(&self, player_id: usize) -> Option<PlayerAssignedToGame> {
-        let players_waiting_for_game = self.players_waiting_for_game.lock().unwrap();
-        if let LobbyPlayer::InGame(game_assignment) = players_waiting_for_game[player_id] {
-            Some(game_assignment)
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to start a game for the players waiting in the lobby, respecting their game size
-    /// preferences.
-    fn start_games(&self, game_manager: &GameManager) {
-        use LobbyPlayer::*;
-        let mut players = self.players_waiting_for_game.lock().unwrap();
-
-        let players_waiting_for_game: Vec<&LobbyPlayer> = players
-            .iter()
-            .filter(|p| {
-                if let WaitingForGame { .. } = p {
-                    true
-                } else {
-                    false
-                }
-            })
-            .collect();
-        let preferences: Vec<&GameSizePreference> = players_waiting_for_game
-            .iter()
-            .filter_map(|p| {
-                if let WaitingForGame {
-                    game_size_preference,
-                    ..
-                } = p
-                {
-                    Some(game_size_preference)
-                } else {
-                    None
-                }
-            })
-            .collect();
-        let indices_in_pwg = GameSizePreference::get_largest_game(&preferences[..]);
-        let player_ids_in_game: Vec<usize> = indices_in_pwg
-            .iter()
-            .filter_map(|i| {
-                if let WaitingForGame {
-                    player_id_in_lobby, ..
-                } = players_waiting_for_game[*i]
-                {
-                    Some(*player_id_in_lobby)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if player_ids_in_game.len() > 0 {
-            let game_id = game_manager.new_game(player_ids_in_game.len());
-
-            for (player_id_in_game, player_id_in_lobby) in player_ids_in_game.iter().enumerate() {
-                players[*player_id_in_lobby] = InGame(PlayerAssignedToGame {
-                    game_id,
-                    player_id_in_game,
-                });
-            }
-        }
     }
 }
 
@@ -253,7 +147,7 @@ async fn main() {
         .map(move |request: JoinLobbyRequest| {
             let player_id_in_lobby =
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
-            lobby_for_handler.start_games(&games_mutex_for_handler);
+            lobby_for_handler.start_games(&*games_mutex_for_handler);
 
             if let Some(PlayerAssignedToGame {
                 game_id,
