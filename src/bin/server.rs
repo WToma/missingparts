@@ -5,7 +5,8 @@ use missingparts::gameplay::{GameDescription, Gameplay};
 use missingparts::lobby::{GameCreator, Lobby, PlayerAssignedToGame};
 use missingparts::playeraction::PlayerAction;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use warp::Filter;
 
 /// A single game that's managed by the `GameManager`.
@@ -48,18 +49,13 @@ impl ManagedGame {
 /// operations on a game, or `with_mut_game` for read-write operations on a game.
 struct GameManager {
     games: CHashMap<usize, ManagedGame>,
-    next_game_index: Mutex<usize>,
+    next_game_index: AtomicUsize,
 }
 
 impl GameCreator for GameManager {
     /// Starts a new game, and returns the ID of the game that can be used with `with_game` and `with_mut_game`.
     fn new_game(&self, num_players: usize) -> usize {
-        let next_index = {
-            let mut next_game_index_ref = self.next_game_index.lock().unwrap();
-            let next_index = *next_game_index_ref;
-            *next_game_index_ref += 1;
-            next_index
-        };
+        let next_index = self.next_game_index.fetch_add(1, Ordering::SeqCst);
         self.games.insert(next_index, ManagedGame::new(num_players));
         next_index
     }
@@ -69,7 +65,7 @@ impl GameManager {
     fn new() -> GameManager {
         GameManager {
             games: CHashMap::new(),
-            next_game_index: Mutex::new(0),
+            next_game_index: AtomicUsize::new(0),
         }
     }
 
