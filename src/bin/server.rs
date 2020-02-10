@@ -2,7 +2,7 @@ use chashmap::CHashMap;
 use missingparts::actionerror::ActionError;
 use missingparts::cards::Card;
 use missingparts::gameplay::{GameDescription, Gameplay};
-use missingparts::lobby::{GameCreator, Lobby, PlayerAssignedToGame};
+use missingparts::lobby::{GameCreator, Lobby, PlayerAssignedToGame, PlayerIdInLobby};
 use missingparts::playeraction::PlayerAction;
 use missingparts::server_core_types::GameId;
 use serde::{Deserialize, Serialize};
@@ -165,9 +165,11 @@ async fn main() {
             } else {
                 warp::reply::with_status(
                     warp::reply::with_header(
-                        warp::reply::json(&JoinedLobbyResponse { player_id_in_lobby }),
+                        warp::reply::json(&JoinedLobbyResponse {
+                            player_id_in_lobby: player_id_in_lobby.0,
+                        }),
                         "Location",
-                        format!("/lobby/players/{}/game", player_id_in_lobby),
+                        format!("/lobby/players/{}/game", player_id_in_lobby.0),
                     ),
                     warp::http::StatusCode::CREATED,
                 )
@@ -181,7 +183,7 @@ async fn main() {
             if let Some(PlayerAssignedToGame {
                 game_id,
                 player_id_in_game,
-            }) = lobby_for_handler.get_player_game(player_id)
+            }) = lobby_for_handler.get_player_game(PlayerIdInLobby(player_id))
             {
                 Box::new(warp::reply::with_status(
                     warp::reply::with_header(

@@ -8,6 +8,10 @@ pub trait GameCreator {
     fn new_game(&self, num_players: usize) -> GameId;
 }
 
+/// The ID of a player in the lobby
+#[derive(Clone, Copy, Hash, PartialEq)]
+pub struct PlayerIdInLobby(pub usize);
+
 #[derive(Clone, Copy)]
 pub struct PlayerAssignedToGame {
     pub game_id: GameId,
@@ -16,7 +20,7 @@ pub struct PlayerAssignedToGame {
 
 enum LobbyPlayer {
     WaitingForGame {
-        player_id_in_lobby: usize,
+        player_id_in_lobby: PlayerIdInLobby,
         game_size_preference: GameSizePreference,
     },
 
@@ -35,9 +39,9 @@ impl Lobby {
         }
     }
 
-    pub fn add_player(&self, min_game_size: usize, max_game_size: usize) -> usize {
+    pub fn add_player(&self, min_game_size: usize, max_game_size: usize) -> PlayerIdInLobby {
         let players_waiting_for_game = &mut self.players_waiting_for_game.lock().unwrap();
-        let player_id = players_waiting_for_game.len();
+        let player_id = PlayerIdInLobby(players_waiting_for_game.len());
         players_waiting_for_game.push(LobbyPlayer::WaitingForGame {
             player_id_in_lobby: player_id,
             game_size_preference: GameSizePreference {
@@ -49,9 +53,9 @@ impl Lobby {
     }
 
     /// Returns the game ID for the given player, if one has been assigned.
-    pub fn get_player_game(&self, player_id: usize) -> Option<PlayerAssignedToGame> {
+    pub fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
         let players_waiting_for_game = self.players_waiting_for_game.lock().unwrap();
-        if let LobbyPlayer::InGame(game_assignment) = players_waiting_for_game[player_id] {
+        if let LobbyPlayer::InGame(game_assignment) = players_waiting_for_game[player_id.0] {
             Some(game_assignment)
         } else {
             None
@@ -92,7 +96,7 @@ impl Lobby {
             })
             .collect();
         let indices_in_pwg = GameSizePreference::get_largest_game(&preferences[..]);
-        let player_ids_in_game: Vec<usize> = indices_in_pwg
+        let player_ids_in_game: Vec<PlayerIdInLobby> = indices_in_pwg
             .iter()
             .filter_map(|i| {
                 if let WaitingForGame {
@@ -110,7 +114,8 @@ impl Lobby {
             let game_id = game_manager.new_game(player_ids_in_game.len());
 
             for (player_id_in_game, player_id_in_lobby) in player_ids_in_game.iter().enumerate() {
-                players[*player_id_in_lobby] = InGame(PlayerAssignedToGame {
+                let idx: usize = player_id_in_lobby.0;
+                players[idx] = InGame(PlayerAssignedToGame {
                     game_id,
                     player_id_in_game,
                 });
