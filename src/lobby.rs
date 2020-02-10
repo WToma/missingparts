@@ -1,15 +1,16 @@
+use crate::server_core_types::GameId;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 pub trait GameCreator {
     /// Creates a new game with the specified number of players, and returns the ID of the game
     /// that was created
-    fn new_game(&self, num_players: usize) -> usize;
+    fn new_game(&self, num_players: usize) -> GameId;
 }
 
 #[derive(Clone, Copy)]
 pub struct PlayerAssignedToGame {
-    pub game_id: usize,
+    pub game_id: GameId,
     pub player_id_in_game: usize,
 }
 

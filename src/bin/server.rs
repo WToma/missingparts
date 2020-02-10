@@ -4,6 +4,7 @@ use missingparts::cards::Card;
 use missingparts::gameplay::{GameDescription, Gameplay};
 use missingparts::lobby::{GameCreator, Lobby, PlayerAssignedToGame};
 use missingparts::playeraction::PlayerAction;
+use missingparts::server_core_types::GameId;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -48,14 +49,14 @@ impl ManagedGame {
 /// To start a new game under the manager, use `new_game`. After that use `with_game` for read-only
 /// operations on a game, or `with_mut_game` for read-write operations on a game.
 struct GameManager {
-    games: CHashMap<usize, ManagedGame>,
+    games: CHashMap<GameId, ManagedGame>,
     next_game_index: AtomicUsize,
 }
 
 impl GameCreator for GameManager {
     /// Starts a new game, and returns the ID of the game that can be used with `with_game` and `with_mut_game`.
-    fn new_game(&self, num_players: usize) -> usize {
-        let next_index = self.next_game_index.fetch_add(1, Ordering::SeqCst);
+    fn new_game(&self, num_players: usize) -> GameId {
+        let next_index = GameId(self.next_game_index.fetch_add(1, Ordering::SeqCst));
         self.games.insert(next_index, ManagedGame::new(num_players));
         next_index
     }
@@ -69,14 +70,14 @@ impl GameManager {
         }
     }
 
-    fn with_game<F, T>(&self, game_id: usize, f: F) -> T
+    fn with_game<F, T>(&self, game_id: GameId, f: F) -> T
     where
         F: Fn(&ManagedGame) -> T,
     {
         f(&self.games.get(&game_id).unwrap())
     }
 
-    fn with_mut_game<F, T>(&self, game_id: usize, f: F) -> T
+    fn with_mut_game<F, T>(&self, game_id: GameId, f: F) -> T
     where
         F: Fn(&mut ManagedGame) -> T,
     {
@@ -95,8 +96,7 @@ async fn main() {
     let get_game = warp::get()
         .and(warp::path!("games" / usize))
         .map(move |game_id| {
-            let id: usize = game_id;
-            let description = games_mutex_for_handler.with_game(id, |g| g.describe());
+            let description = games_mutex_for_handler.with_game(GameId(game_id), |g| g.describe());
             warp::reply::json(&description)
         });
 
@@ -104,8 +104,8 @@ async fn main() {
     let get_private_card = warp::get()
         .and(warp::path!("games" / usize / "players" / usize / "private"))
         .map(move |game_id, player_id| {
-            let private_card =
-                games_mutex_for_handler.with_game(game_id, |g| g.get_private_card(player_id));
+            let private_card = games_mutex_for_handler
+                .with_game(GameId(game_id), |g| g.get_private_card(player_id));
             warp::reply::json(&PrivateCardResponse {
                 missing_part: private_card,
             })
@@ -118,8 +118,9 @@ async fn main() {
         .and(warp::body::json())
         .map(
             move |game_id, player_id, player_action: PlayerAction| -> Box<dyn warp::Reply> {
-                let action_result = games_mutex_for_handler
-                    .with_mut_game(game_id, |g| g.make_move(player_id, player_action.clone()));
+                let action_result = games_mutex_for_handler.with_mut_game(GameId(game_id), |g| {
+                    g.make_move(player_id, player_action.clone())
+                });
                 if let Err(action_error) = action_result {
                     Box::new(warp::reply::with_status(
                         warp::reply::json(&action_error),
@@ -153,11 +154,11 @@ async fn main() {
                 warp::reply::with_status(
                     warp::reply::with_header(
                         warp::reply::json(&JoinedGameResponse {
-                            game_id,
+                            game_id: game_id.0,
                             player_id_in_game,
                         }),
                         "Location",
-                        format!("/games/{}/players/{}/private", game_id, player_id_in_game),
+                        format!("/games/{}/players/{}/private", game_id.0, player_id_in_game),
                     ),
                     warp::http::StatusCode::CREATED,
                 )
@@ -185,11 +186,11 @@ async fn main() {
                 Box::new(warp::reply::with_status(
                     warp::reply::with_header(
                         warp::reply::json(&JoinedGameResponse {
-                            game_id,
+                            game_id: game_id.0,
                             player_id_in_game,
                         }),
                         "Location",
-                        format!("/games/{}/players/{}/private", game_id, player_id_in_game),
+                        format!("/games/{}/players/{}/private", game_id.0, player_id_in_game),
                     ),
                     warp::http::StatusCode::TEMPORARY_REDIRECT,
                 ))
