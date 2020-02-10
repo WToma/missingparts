@@ -87,38 +87,38 @@ impl GameManager {
 
 #[tokio::main]
 async fn main() {
-    let games_mutex: Arc<GameManager> = Arc::new(GameManager::new());
+    let game_manager: Arc<GameManager> = Arc::new(GameManager::new());
 
     // TODO: the handler panic leaves the server in a zombie state
     //   need to handle panics within each handler!
 
-    let games_mutex_for_handler = Arc::clone(&games_mutex);
+    let game_manager_for_handler = Arc::clone(&game_manager);
     let get_game = warp::get()
         .and(warp::path!("games" / usize))
         .map(move |game_id| {
-            let description = games_mutex_for_handler.with_game(GameId(game_id), |g| g.describe());
+            let description = game_manager_for_handler.with_game(GameId(game_id), |g| g.describe());
             warp::reply::json(&description)
         });
 
-    let games_mutex_for_handler = Arc::clone(&games_mutex);
+    let game_manager_for_handler = Arc::clone(&game_manager);
     let get_private_card = warp::get()
         .and(warp::path!("games" / usize / "players" / usize / "private"))
         .map(move |game_id, player_id| {
-            let private_card = games_mutex_for_handler
+            let private_card = game_manager_for_handler
                 .with_game(GameId(game_id), |g| g.get_private_card(player_id));
             warp::reply::json(&PrivateCardResponse {
                 missing_part: private_card,
             })
         });
 
-    let games_mutex_for_handler = Arc::clone(&games_mutex);
+    let game_manager_for_handler = Arc::clone(&game_manager);
     let make_move = warp::post()
         .and(warp::path!("games" / usize / "players" / usize / "moves"))
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
         .map(
             move |game_id, player_id, player_action: PlayerAction| -> Box<dyn warp::Reply> {
-                let action_result = games_mutex_for_handler.with_mut_game(GameId(game_id), |g| {
+                let action_result = game_manager_for_handler.with_mut_game(GameId(game_id), |g| {
                     g.make_move(player_id, player_action.clone())
                 });
                 if let Err(action_error) = action_result {
@@ -136,7 +136,7 @@ async fn main() {
 
     let lobby: Arc<Lobby> = Arc::new(Lobby::new());
     let lobby_for_handler = Arc::clone(&lobby);
-    let games_mutex_for_handler = Arc::clone(&games_mutex);
+    let game_manager_for_handler = Arc::clone(&game_manager);
     let join_lobby = warp::post()
         .and(warp::path!("lobby"))
         .and(warp::body::content_length_limit(1024 * 16))
@@ -144,7 +144,7 @@ async fn main() {
         .map(move |request: JoinLobbyRequest| {
             let player_id_in_lobby =
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
-            lobby_for_handler.start_games(&*games_mutex_for_handler);
+            lobby_for_handler.start_games(&*game_manager_for_handler);
 
             if let Some(PlayerAssignedToGame {
                 game_id,

@@ -29,20 +29,20 @@ enum LobbyPlayer {
 
 /// Manages the players who are waiting to join a game. Safe to access concurrently.
 pub struct Lobby {
-    players_waiting_for_game: Mutex<Vec<LobbyPlayer>>,
+    players_in_lobby: Mutex<Vec<LobbyPlayer>>,
 }
 
 impl Lobby {
     pub fn new() -> Lobby {
         Lobby {
-            players_waiting_for_game: Mutex::new(Vec::new()),
+            players_in_lobby: Mutex::new(Vec::new()),
         }
     }
 
     pub fn add_player(&self, min_game_size: usize, max_game_size: usize) -> PlayerIdInLobby {
-        let players_waiting_for_game = &mut self.players_waiting_for_game.lock().unwrap();
-        let player_id = PlayerIdInLobby(players_waiting_for_game.len());
-        players_waiting_for_game.push(LobbyPlayer::WaitingForGame {
+        let players_in_lobby = &mut self.players_in_lobby.lock().unwrap();
+        let player_id = PlayerIdInLobby(players_in_lobby.len());
+        players_in_lobby.push(LobbyPlayer::WaitingForGame {
             player_id_in_lobby: player_id,
             game_size_preference: GameSizePreference {
                 min_game_size,
@@ -54,8 +54,8 @@ impl Lobby {
 
     /// Returns the game ID for the given player, if one has been assigned.
     pub fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
-        let players_waiting_for_game = self.players_waiting_for_game.lock().unwrap();
-        if let LobbyPlayer::InGame(game_assignment) = players_waiting_for_game[player_id.0] {
+        let players_in_lobby = self.players_in_lobby.lock().unwrap();
+        if let LobbyPlayer::InGame(game_assignment) = players_in_lobby[player_id.0] {
             Some(game_assignment)
         } else {
             None
@@ -69,7 +69,7 @@ impl Lobby {
         T: GameCreator,
     {
         use LobbyPlayer::*;
-        let mut players = self.players_waiting_for_game.lock().unwrap();
+        let mut players = self.players_in_lobby.lock().unwrap();
 
         let players_waiting_for_game: Vec<&LobbyPlayer> = players
             .iter()
