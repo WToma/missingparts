@@ -56,7 +56,7 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
     /// Inserts the value V for the range `[new_range_start, new_range_end)` (start inclusive, end exclusive).
     ///
     /// Note: if `new_range_end >= new_range_start`, this is a no-op.
-    pub fn insert(&mut self, new_range_start: K, new_range_end: K, value: V) {
+    pub fn insert(&mut self, mut new_range_start: K, new_range_end: K, value: V) {
         if new_range_end <= new_range_start {
             return;
         }
@@ -64,90 +64,92 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
         // TODO improvements:
         // 1. after the initial binary search we do not need to repeat the searches, the Ok(i) / Err(i) can be deduced
         //    in constant time
-        // 2. maybe replace recursion with a loop?
-        match self
-            .non_overlapping_ranges
-            .binary_search_by_key(&new_range_start, |r| r.0.start)
-        {
-            Ok(i) => {
-                // exact match: the new range starts exactly where the old range starts
-                let existing_range = &self.non_overlapping_ranges[i].0;
-                if existing_range.end > new_range_end {
-                    // the new range ends inside the existing range: split the existing range into two,
-                    // and add the new value to the lower half
-                    let old_end = existing_range.end;
-                    let old_range_values = self.non_overlapping_ranges[i].1.clone();
-                    self.non_overlapping_ranges[i].0.end = new_range_end;
-                    self.non_overlapping_ranges[i].1.push(value);
-                    self.non_overlapping_ranges.insert(
-                        i + 1,
-                        (
-                            NonOverlappingRange {
-                                start: new_range_end,
-                                end: old_end,
-                            },
-                            old_range_values,
-                        ),
-                    );
-                } else {
-                    // the new range ends outside the existing range: add the new value to the existing range, "consume"
-                    // the new range up to the end of the existing range, then recurse
-                    let existing_range_end = existing_range.end;
-                    self.non_overlapping_ranges[i].1.push(value);
-                    self.insert(existing_range_end, new_range_end, value);
+        while new_range_end > new_range_start {
+            match self
+                .non_overlapping_ranges
+                .binary_search_by_key(&new_range_start, |r| r.0.start)
+            {
+                Ok(i) => {
+                    // exact match: the new range starts exactly where the old range starts
+                    let existing_range = &self.non_overlapping_ranges[i].0;
+                    if existing_range.end > new_range_end {
+                        // the new range ends inside the existing range: split the existing range into two,
+                        // and add the new value to the lower half
+                        let old_end = existing_range.end;
+                        let old_range_values = self.non_overlapping_ranges[i].1.clone();
+                        self.non_overlapping_ranges[i].0.end = new_range_end;
+                        self.non_overlapping_ranges[i].1.push(value);
+                        self.non_overlapping_ranges.insert(
+                            i + 1,
+                            (
+                                NonOverlappingRange {
+                                    start: new_range_end,
+                                    end: old_end,
+                                },
+                                old_range_values,
+                            ),
+                        );
+                        break;
+                    } else {
+                        // the new range ends outside the existing range: add the new value to the existing range, "consume"
+                        // the new range up to the end of the existing range, then recurse
+                        let existing_range_end = existing_range.end;
+                        self.non_overlapping_ranges[i].1.push(value);
+                        new_range_start = existing_range_end;
+                    }
                 }
-            }
-            Err(i) => {
-                if i >= 1
-                    && i - 1 < self.non_overlapping_ranges.len()
-                    && self.non_overlapping_ranges[i - 1].0.end > new_range_start
-                    && self.non_overlapping_ranges[i - 1].0.start < new_range_start
-                {
-                    // the new range starts inside an existing range. split the existing range into 2, then try again
-                    let existing_range_values = self.non_overlapping_ranges[i - 1].1.clone();
-                    let old_end = self.non_overlapping_ranges[i - 1].0.end;
-                    self.non_overlapping_ranges[i - 1].0.end = new_range_start;
-                    self.non_overlapping_ranges.insert(
-                        i,
-                        (
-                            NonOverlappingRange {
-                                start: new_range_start,
-                                end: old_end,
-                            },
-                            existing_range_values,
-                        ),
-                    );
-                    self.insert(new_range_start, new_range_end, value);
-                } else if i < self.non_overlapping_ranges.len()
-                    && self.non_overlapping_ranges[i].0.start < new_range_end
-                {
-                    // there is a next range, and the next range starts before the new range ends. add the new value to
-                    // a new range, "consume" the new range up to the beginning of the next range, then recurse
-                    let next_range_start = self.non_overlapping_ranges[i].0.start;
-                    self.non_overlapping_ranges.insert(
-                        i,
-                        (
-                            NonOverlappingRange {
-                                start: new_range_start,
-                                end: next_range_start,
-                            },
-                            vec![value],
-                        ),
-                    );
-                    self.insert(next_range_start, new_range_end, value);
-                } else {
-                    // there is no next range, or the next range starts further out than the current range starts. just
-                    // add the new value into a new range
-                    self.non_overlapping_ranges.insert(
-                        i,
-                        (
-                            NonOverlappingRange {
-                                start: new_range_start,
-                                end: new_range_end,
-                            },
-                            vec![value],
-                        ),
-                    );
+                Err(i) => {
+                    if i >= 1
+                        && i - 1 < self.non_overlapping_ranges.len()
+                        && self.non_overlapping_ranges[i - 1].0.end > new_range_start
+                        && self.non_overlapping_ranges[i - 1].0.start < new_range_start
+                    {
+                        // the new range starts inside an existing range. split the existing range into 2, then try again
+                        let existing_range_values = self.non_overlapping_ranges[i - 1].1.clone();
+                        let old_end = self.non_overlapping_ranges[i - 1].0.end;
+                        self.non_overlapping_ranges[i - 1].0.end = new_range_start;
+                        self.non_overlapping_ranges.insert(
+                            i,
+                            (
+                                NonOverlappingRange {
+                                    start: new_range_start,
+                                    end: old_end,
+                                },
+                                existing_range_values,
+                            ),
+                        );
+                    } else if i < self.non_overlapping_ranges.len()
+                        && self.non_overlapping_ranges[i].0.start < new_range_end
+                    {
+                        // there is a next range, and the next range starts before the new range ends. add the new value to
+                        // a new range, "consume" the new range up to the beginning of the next range, then recurse
+                        let next_range_start = self.non_overlapping_ranges[i].0.start;
+                        self.non_overlapping_ranges.insert(
+                            i,
+                            (
+                                NonOverlappingRange {
+                                    start: new_range_start,
+                                    end: next_range_start,
+                                },
+                                vec![value],
+                            ),
+                        );
+                        new_range_start = next_range_start;
+                    } else {
+                        // there is no next range, or the next range starts further out than the current range starts. just
+                        // add the new value into a new range
+                        self.non_overlapping_ranges.insert(
+                            i,
+                            (
+                                NonOverlappingRange {
+                                    start: new_range_start,
+                                    end: new_range_end,
+                                },
+                                vec![value],
+                            ),
+                        );
+                        break;
+                    }
                 }
             }
         }
