@@ -1,6 +1,7 @@
 use crate::range_map::RangeMap;
 use crate::server_core_types::GameId;
 use std::cmp::min;
+use std::collections::HashMap;
 use std::sync::RwLock;
 
 pub trait GameCreator {
@@ -10,7 +11,7 @@ pub trait GameCreator {
 }
 
 /// The ID of a player in the lobby
-#[derive(Clone, Copy, Hash, PartialEq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PlayerIdInLobby(pub usize);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -66,14 +67,16 @@ impl Lobby {
 }
 
 struct NonThreadSafeLobby {
-    players_in_lobby: Vec<LobbyPlayer>,
+    players_in_lobby: HashMap<PlayerIdInLobby, LobbyPlayer>,
+    next_player_id: usize,
     game_size_prefs_ranges: RangeMap<usize, PlayerIdInLobby>,
 }
 
 impl NonThreadSafeLobby {
     fn new() -> NonThreadSafeLobby {
         NonThreadSafeLobby {
-            players_in_lobby: Vec::new(),
+            players_in_lobby: HashMap::new(),
+            next_player_id: 0,
             game_size_prefs_ranges: RangeMap::new(),
         }
     }
@@ -87,7 +90,8 @@ impl NonThreadSafeLobby {
             return Err(());
         }
 
-        let player_id = PlayerIdInLobby(self.players_in_lobby.len());
+        let player_id = PlayerIdInLobby(self.next_player_id);
+        self.next_player_id += 1;
         let player_waiting_for_game = PlayerWaitingForGame {
             player_id_in_lobby: player_id,
             game_size_preference: GameSizePreference {
@@ -96,20 +100,17 @@ impl NonThreadSafeLobby {
             },
         };
         self.insert_player_to_game_size_prefs(&player_waiting_for_game);
-        self.players_in_lobby
-            .push(LobbyPlayer::WaitingForGame(player_waiting_for_game));
+        self.players_in_lobby.insert(
+            player_id,
+            LobbyPlayer::WaitingForGame(player_waiting_for_game),
+        );
         Ok(player_id)
     }
 
     /// Returns the game ID for the given player, if one has been assigned.
     fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
-        let player_index: usize = player_id.0;
-        if player_index >= self.players_in_lobby.len() {
-            return None;
-        }
-
-        if let LobbyPlayer::InGame(game_assignment) = self.players_in_lobby[player_id.0] {
-            Some(game_assignment)
+        if let Some(LobbyPlayer::InGame(game_assignment)) = self.players_in_lobby.get(&player_id) {
+            Some(*game_assignment)
         } else {
             None
         }
@@ -139,11 +140,13 @@ impl NonThreadSafeLobby {
             let game_id = game_manager.new_game(player_ids_in_game.len());
 
             for (player_id_in_game, player_id_in_lobby) in player_ids_in_game.iter().enumerate() {
-                let idx: usize = player_id_in_lobby.0;
-                self.players_in_lobby[idx] = LobbyPlayer::InGame(PlayerAssignedToGame {
-                    game_id,
-                    player_id_in_game,
-                });
+                self.players_in_lobby.insert(
+                    *player_id_in_lobby,
+                    LobbyPlayer::InGame(PlayerAssignedToGame {
+                        game_id,
+                        player_id_in_game,
+                    }),
+                );
             }
 
             self.rebuild_game_size_prefs();
@@ -153,7 +156,7 @@ impl NonThreadSafeLobby {
     fn rebuild_game_size_prefs(&mut self) {
         self.game_size_prefs_ranges = RangeMap::new();
         let mut players_waiting_for_game = Vec::new();
-        for p in &self.players_in_lobby {
+        for p in self.players_in_lobby.values() {
             if let LobbyPlayer::WaitingForGame(player_waiting_for_game) = p {
                 players_waiting_for_game.push(player_waiting_for_game.clone());
             }
