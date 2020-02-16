@@ -31,37 +31,26 @@ enum LobbyPlayer {
 
 /// Manages the players who are waiting to join a game. Safe to access concurrently.
 pub struct Lobby {
-    players_in_lobby: Mutex<Vec<LobbyPlayer>>,
+    internal: Mutex<NonThreadSafeLobby>,
 }
 
 impl Lobby {
     pub fn new() -> Lobby {
         Lobby {
-            players_in_lobby: Mutex::new(Vec::new()),
+            internal: Mutex::new(NonThreadSafeLobby::new()),
         }
     }
 
     pub fn add_player(&self, min_game_size: usize, max_game_size: usize) -> PlayerIdInLobby {
-        let players_in_lobby = &mut self.players_in_lobby.lock().unwrap();
-        let player_id = PlayerIdInLobby(players_in_lobby.len());
-        players_in_lobby.push(LobbyPlayer::WaitingForGame(PlayerWaitingForGame {
-            player_id_in_lobby: player_id,
-            game_size_preference: GameSizePreference {
-                min_game_size,
-                max_game_size,
-            },
-        }));
-        player_id
+        self.internal
+            .lock()
+            .unwrap()
+            .add_player(min_game_size, max_game_size)
     }
 
     /// Returns the game ID for the given player, if one has been assigned.
     pub fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
-        let players_in_lobby = self.players_in_lobby.lock().unwrap();
-        if let LobbyPlayer::InGame(game_assignment) = players_in_lobby[player_id.0] {
-            Some(game_assignment)
-        } else {
-            None
-        }
+        self.internal.lock().unwrap().get_player_game(player_id)
     }
 
     /// Attempts to start a game for the players waiting in the lobby, respecting their game size
@@ -70,11 +59,53 @@ impl Lobby {
     where
         T: GameCreator,
     {
+        self.internal.lock().unwrap().start_games(game_manager)
+    }
+}
+
+struct NonThreadSafeLobby {
+    players_in_lobby: Vec<LobbyPlayer>,
+}
+
+impl NonThreadSafeLobby {
+    pub fn new() -> NonThreadSafeLobby {
+        NonThreadSafeLobby {
+            players_in_lobby: Vec::new(),
+        }
+    }
+
+    pub fn add_player(&mut self, min_game_size: usize, max_game_size: usize) -> PlayerIdInLobby {
+        let player_id = PlayerIdInLobby(self.players_in_lobby.len());
+        self.players_in_lobby
+            .push(LobbyPlayer::WaitingForGame(PlayerWaitingForGame {
+                player_id_in_lobby: player_id,
+                game_size_preference: GameSizePreference {
+                    min_game_size,
+                    max_game_size,
+                },
+            }));
+        player_id
+    }
+
+    /// Returns the game ID for the given player, if one has been assigned.
+    pub fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
+        if let LobbyPlayer::InGame(game_assignment) = self.players_in_lobby[player_id.0] {
+            Some(game_assignment)
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to start a game for the players waiting in the lobby, respecting their game size
+    /// preferences.
+    pub fn start_games<T>(&mut self, game_manager: &T)
+    where
+        T: GameCreator,
+    {
         use LobbyPlayer::*;
-        let mut players = self.players_in_lobby.lock().unwrap();
 
         let mut game_size_prefs_ranges: RangeMap<usize, PlayerIdInLobby> = RangeMap::new();
-        for p in &*players {
+        for p in &self.players_in_lobby {
             if let WaitingForGame(player_waiting_for_game) = p {
                 game_size_prefs_ranges.insert(
                     player_waiting_for_game.game_size_preference.min_game_size,
@@ -105,7 +136,7 @@ impl Lobby {
 
             for (player_id_in_game, player_id_in_lobby) in player_ids_in_game.iter().enumerate() {
                 let idx: usize = player_id_in_lobby.0;
-                players[idx] = InGame(PlayerAssignedToGame {
+                self.players_in_lobby[idx] = InGame(PlayerAssignedToGame {
                     game_id,
                     player_id_in_game,
                 });
