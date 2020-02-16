@@ -141,38 +141,52 @@ async fn main() {
         .and(warp::path!("lobby"))
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
-        .map(move |request: JoinLobbyRequest| {
+        .map(move |request: JoinLobbyRequest| -> Box<dyn warp::Reply> {
             let player_id_in_lobby =
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
-            lobby_for_handler.start_games(&*game_manager_for_handler);
+            match player_id_in_lobby {
+                Ok(player_id_in_lobby) => {
+                    lobby_for_handler.start_games(&*game_manager_for_handler);
 
-            if let Some(PlayerAssignedToGame {
-                game_id,
-                player_id_in_game,
-            }) = lobby_for_handler.get_player_game(player_id_in_lobby)
-            {
-                warp::reply::with_status(
-                    warp::reply::with_header(
-                        warp::reply::json(&JoinedGameResponse {
-                            game_id: game_id.0,
-                            player_id_in_game,
-                        }),
-                        "Location",
-                        format!("/games/{}/players/{}/private", game_id.0, player_id_in_game),
-                    ),
-                    warp::http::StatusCode::CREATED,
-                )
-            } else {
-                warp::reply::with_status(
-                    warp::reply::with_header(
-                        warp::reply::json(&JoinedLobbyResponse {
-                            player_id_in_lobby: player_id_in_lobby.0,
-                        }),
-                        "Location",
-                        format!("/lobby/players/{}/game", player_id_in_lobby.0),
-                    ),
-                    warp::http::StatusCode::CREATED,
-                )
+                    if let Some(PlayerAssignedToGame {
+                        game_id,
+                        player_id_in_game,
+                    }) = lobby_for_handler.get_player_game(player_id_in_lobby)
+                    {
+                        Box::new(warp::reply::with_status(
+                            warp::reply::with_header(
+                                warp::reply::json(&JoinedGameResponse {
+                                    game_id: game_id.0,
+                                    player_id_in_game,
+                                }),
+                                "Location",
+                                format!(
+                                    "/games/{}/players/{}/private",
+                                    game_id.0, player_id_in_game
+                                ),
+                            ),
+                            warp::http::StatusCode::CREATED,
+                        ))
+                    } else {
+                        Box::new(warp::reply::with_status(
+                            warp::reply::with_header(
+                                warp::reply::json(&JoinedLobbyResponse {
+                                    player_id_in_lobby: player_id_in_lobby.0,
+                                }),
+                                "Location",
+                                format!("/lobby/players/{}/game", player_id_in_lobby.0),
+                            ),
+                            warp::http::StatusCode::CREATED,
+                        ))
+                    }
+                }
+                Err(_) => Box::new(warp::reply::with_status(
+                    warp::reply::json(&InvalidGameSizePreference {
+                        min_game_size: request.min_game_size,
+                        max_game_size: request.max_game_size,
+                    }),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )),
             }
         });
 
@@ -224,6 +238,12 @@ struct JoinLobbyRequest {
 #[derive(Serialize)]
 struct JoinedLobbyResponse {
     player_id_in_lobby: usize,
+}
+
+#[derive(Serialize)]
+struct InvalidGameSizePreference {
+    min_game_size: usize,
+    max_game_size: usize,
 }
 
 #[derive(Serialize)]

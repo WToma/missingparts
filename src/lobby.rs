@@ -42,7 +42,11 @@ impl Lobby {
         }
     }
 
-    pub fn add_player(&self, min_game_size: usize, max_game_size: usize) -> PlayerIdInLobby {
+    pub fn add_player(
+        &self,
+        min_game_size: usize,
+        max_game_size: usize,
+    ) -> Result<PlayerIdInLobby, ()> {
         self.internal
             .write()
             .unwrap()
@@ -74,7 +78,15 @@ impl NonThreadSafeLobby {
         }
     }
 
-    fn add_player(&mut self, min_game_size: usize, max_game_size: usize) -> PlayerIdInLobby {
+    fn add_player(
+        &mut self,
+        min_game_size: usize,
+        max_game_size: usize,
+    ) -> Result<PlayerIdInLobby, ()> {
+        if min_game_size < 2 || max_game_size < min_game_size {
+            return Err(());
+        }
+
         let player_id = PlayerIdInLobby(self.players_in_lobby.len());
         let player_waiting_for_game = PlayerWaitingForGame {
             player_id_in_lobby: player_id,
@@ -86,11 +98,16 @@ impl NonThreadSafeLobby {
         self.insert_player_to_game_size_prefs(&player_waiting_for_game);
         self.players_in_lobby
             .push(LobbyPlayer::WaitingForGame(player_waiting_for_game));
-        player_id
+        Ok(player_id)
     }
 
     /// Returns the game ID for the given player, if one has been assigned.
     fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
+        let player_index: usize = player_id.0;
+        if player_index >= self.players_in_lobby.len() {
+            return None;
+        }
+
         if let LobbyPlayer::InGame(game_assignment) = self.players_in_lobby[player_id.0] {
             Some(game_assignment)
         } else {
@@ -170,16 +187,16 @@ mod tests {
     #[test]
     fn test_add_player_no_game() {
         let l = Lobby::new();
-        let player_1_id = l.add_player(2, 4); //              a single player joins the lobby
+        let player_1_id = l.add_player(2, 4).unwrap(); //     a single player joins the lobby
         assert!(l.get_player_game(player_1_id).is_none()); // and has no game yet
     }
 
     #[test]
     fn test_start_game() {
         let l = Lobby::new();
-        let player_1_id = l.add_player(2, 4); // player 1 joins the lobby with minimum game size 2
-        let player_2_id = l.add_player(2, 4); // player 2 joins the lobby with minimum game size 2
-        let player_3_id = l.add_player(6, 6); // player 2 joins the lobby with minimum game size 6
+        let player_1_id = l.add_player(2, 4).unwrap(); // player 1 joins the lobby with minimum game size 2
+        let player_2_id = l.add_player(2, 4).unwrap(); // player 2 joins the lobby with minimum game size 2
+        let player_3_id = l.add_player(6, 6).unwrap(); // player 2 joins the lobby with minimum game size 6
 
         l.start_games(&mock_game_creator(2, GameId(42))); // starting a game assigns
         assert_eq!(
@@ -202,10 +219,10 @@ mod tests {
     #[test]
     fn test_player_assignment_optimal() {
         let l = Lobby::new();
-        l.add_player(2, 4);
-        l.add_player(2, 4);
-        l.add_player(2, 4);
-        l.add_player(2, 4);
+        l.add_player(2, 4).unwrap();
+        l.add_player(2, 4).unwrap();
+        l.add_player(2, 4).unwrap();
+        l.add_player(2, 4).unwrap();
 
         // larger game sizes are preferred, so the largest possible game is started
         l.start_games(&mock_game_creator(4, GameId(42)));
@@ -215,11 +232,11 @@ mod tests {
     fn test_player_assignment_prefers_earlier_player() {
         let l = Lobby::new();
         let mut players = Vec::new();
-        players.push(l.add_player(3, 6));
-        players.push(l.add_player(3, 4));
-        players.push(l.add_player(2, 6));
-        players.push(l.add_player(2, 4));
-        let player_5_id = l.add_player(2, 4);
+        players.push(l.add_player(3, 6).unwrap());
+        players.push(l.add_player(3, 4).unwrap());
+        players.push(l.add_player(2, 6).unwrap());
+        players.push(l.add_player(2, 4).unwrap());
+        let player_5_id = l.add_player(2, 4).unwrap();
         // everyone is OK with 3 and 4 player games, so a 4 player game will be started
         l.start_games(&mock_game_creator(4, GameId(42)));
 
@@ -236,11 +253,11 @@ mod tests {
     fn test_player_assignment_multiple_games() {
         let l = Lobby::new();
         let mut game1_players = Vec::new();
-        let unreasonable_player = l.add_player(12, 42);
-        game1_players.push(l.add_player(3, 6));
-        game1_players.push(l.add_player(3, 3));
-        game1_players.push(l.add_player(2, 6));
-        let first_game_2_player = l.add_player(2, 4);
+        let unreasonable_player = l.add_player(12, 42).unwrap();
+        game1_players.push(l.add_player(3, 6).unwrap());
+        game1_players.push(l.add_player(3, 3).unwrap());
+        game1_players.push(l.add_player(2, 6).unwrap());
+        let first_game_2_player = l.add_player(2, 4).unwrap();
 
         // we can start a 3 player game with the first 3 players
         l.start_games(&mock_game_creator(3, GameId(1)));
@@ -253,7 +270,7 @@ mod tests {
 
         let mut game2_players = Vec::new();
         game2_players.push(first_game_2_player);
-        game2_players.push(l.add_player(2, 4));
+        game2_players.push(l.add_player(2, 4).unwrap());
 
         // we can now start another 2 player game
         l.start_games(&mock_game_creator(2, GameId(2)));
@@ -270,17 +287,19 @@ mod tests {
         assert!(l.get_player_game(unreasonable_player).is_none());
     }
 
-    // #[test]
-    // fn test_wrong_player_reference_in_get() {
-    //     // should not panic
-    //     unimplemented!();
-    // }
+    #[test]
+    fn test_wrong_player_reference_in_get() {
+        let l = Lobby::new();
+        l.get_player_game(PlayerIdInLobby(42)); // does not exist, should not panic
+    }
 
-    // #[test]
-    // fn test_wrong_game_size_preferences() {
-    //     // should not be accepted
-    //     unimplemented!();
-    // }
+    #[test]
+    fn test_wrong_game_size_preferences() {
+        let l = Lobby::new();
+        assert!(l.add_player(0, 2).is_err());
+        assert!(l.add_player(1, 2).is_err());
+        assert!(l.add_player(3, 2).is_err());
+    }
 
     fn mock_game_creator(expected_game_size: usize, return_game_id: GameId) -> impl GameCreator {
         MockGameCreator {
