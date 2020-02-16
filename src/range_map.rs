@@ -61,14 +61,11 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
             return;
         }
 
-        // TODO improvements:
-        // 1. after the initial binary search we do not need to repeat the searches, the Ok(i) / Err(i) can be deduced
-        //    in constant time
+        let mut existing_range_to_consider = self
+            .non_overlapping_ranges
+            .binary_search_by_key(&new_range_start, |r| r.0.start);
         while new_range_end > new_range_start {
-            match self
-                .non_overlapping_ranges
-                .binary_search_by_key(&new_range_start, |r| r.0.start)
-            {
+            match existing_range_to_consider {
                 Ok(i) => {
                     // exact match: the new range starts exactly where the old range starts
                     let existing_range = &self.non_overlapping_ranges[i].0;
@@ -96,6 +93,13 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                         let existing_range_end = existing_range.end;
                         self.non_overlapping_ranges[i].1.push(value);
                         new_range_start = existing_range_end;
+                        existing_range_to_consider = if self.non_overlapping_ranges.len() > i + 1
+                            && self.non_overlapping_ranges[i + 1].0.start == new_range_start
+                        {
+                            Ok(i + 1)
+                        } else {
+                            Err(i + 1)
+                        };
                     }
                 }
                 Err(i) => {
@@ -118,6 +122,12 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                                 existing_range_values,
                             ),
                         );
+                        existing_range_to_consider =
+                            if self.non_overlapping_ranges[i].0.start == new_range_start {
+                                Ok(i)
+                            } else {
+                                Err(i)
+                            };
                     } else if i < self.non_overlapping_ranges.len()
                         && self.non_overlapping_ranges[i].0.start < new_range_end
                     {
@@ -135,6 +145,13 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                             ),
                         );
                         new_range_start = next_range_start;
+                        existing_range_to_consider = if self.non_overlapping_ranges.len() > i + 1
+                            && self.non_overlapping_ranges[i + 1].0.start == new_range_start
+                        {
+                            Ok(i + 1)
+                        } else {
+                            Err(i + 1)
+                        };
                     } else {
                         // there is no next range, or the next range starts further out than the current range starts. just
                         // add the new value into a new range
