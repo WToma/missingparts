@@ -55,10 +55,7 @@ impl Lobby {
 
     /// Attempts to start a game for the players waiting in the lobby, respecting their game size
     /// preferences.
-    pub fn start_games<T>(&self, game_manager: &T)
-    where
-        T: GameCreator,
-    {
+    pub fn start_games<T: GameCreator>(&self, game_manager: &T) {
         self.internal.lock().unwrap().start_games(game_manager)
     }
 }
@@ -98,10 +95,7 @@ impl NonThreadSafeLobby {
 
     /// Attempts to start a game for the players waiting in the lobby, respecting their game size
     /// preferences.
-    pub fn start_games<T>(&mut self, game_manager: &T)
-    where
-        T: GameCreator,
-    {
+    pub fn start_games<T: GameCreator>(&mut self, game_manager: &T) {
         use LobbyPlayer::*;
 
         let mut game_size_prefs_ranges: RangeMap<usize, PlayerIdInLobby> = RangeMap::new();
