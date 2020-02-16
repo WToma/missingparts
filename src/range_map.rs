@@ -88,8 +88,9 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                         );
                         break;
                     } else {
-                        // the new range ends outside the existing range: add the new value to the existing range, "consume"
-                        // the new range up to the end of the existing range, then recurse
+                        // the new range ends outside the existing range: add the new value to the existing range,
+                        // "consume" the new range up to the end of the existing range, then continue from the next
+                        // range
                         let existing_range_end = existing_range.end;
                         self.non_overlapping_ranges[i].1.push(value);
                         new_range_start = existing_range_end;
@@ -108,7 +109,8 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                         && self.non_overlapping_ranges[i - 1].0.end > new_range_start
                         && self.non_overlapping_ranges[i - 1].0.start < new_range_start
                     {
-                        // the new range starts inside an existing range. split the existing range into 2, then try again
+                        // the new range starts inside an existing range. split the existing range into 2, then try
+                        // again
                         let existing_range_values = self.non_overlapping_ranges[i - 1].1.clone();
                         let old_end = self.non_overlapping_ranges[i - 1].0.end;
                         self.non_overlapping_ranges[i - 1].0.end = new_range_start;
@@ -131,8 +133,9 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                     } else if i < self.non_overlapping_ranges.len()
                         && self.non_overlapping_ranges[i].0.start < new_range_end
                     {
-                        // there is a next range, and the next range starts before the new range ends. add the new value to
-                        // a new range, "consume" the new range up to the beginning of the next range, then recurse
+                        // there is a next range, and the next range starts before the new range ends. add the new value
+                        // to a new range, "consume" the new range up to the beginning of the next range, then continue
+                        // from the next range
                         let next_range_start = self.non_overlapping_ranges[i].0.start;
                         self.non_overlapping_ranges.insert(
                             i,
@@ -153,8 +156,8 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                             Err(i + 1)
                         };
                     } else {
-                        // there is no next range, or the next range starts further out than the current range starts. just
-                        // add the new value into a new range
+                        // there is no next range, or the next range starts further out than the current range starts.
+                        // just add the new value into a new range
                         self.non_overlapping_ranges.insert(
                             i,
                             (
