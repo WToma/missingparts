@@ -43,6 +43,8 @@ impl Lobby {
         }
     }
 
+    /// Adds a player to the lobby with the given preference for game size. The ID of the player is returned,
+    /// this can be used with `get_player_game` to query if the player has a game yet.
     pub fn add_player(
         &self,
         min_game_size: usize,
@@ -52,6 +54,13 @@ impl Lobby {
             .write()
             .unwrap()
             .add_player(min_game_size, max_game_size)
+    }
+
+    /// Signals to the lobby that the player no longer wants to play a game.
+    ///
+    /// If the player is already in a game, `Err` is returned, otherwise `Ok`.
+    pub fn abandon_lobby(&self, player_id: PlayerIdInLobby) -> Result<(), ()> {
+        self.internal.write().unwrap().abandon_lobby(player_id)
     }
 
     /// Returns the game ID for the given player, if one has been assigned.
@@ -105,6 +114,19 @@ impl NonThreadSafeLobby {
             LobbyPlayer::WaitingForGame(player_waiting_for_game),
         );
         Ok(player_id)
+    }
+
+    /// Signals to the lobby that the player no longer wants to play a game.
+    ///
+    /// If the player is already in a game, `Err` is returned, otherwise `Ok`.
+    pub fn abandon_lobby(&mut self, player_id: PlayerIdInLobby) -> Result<(), ()> {
+        if let Some(LobbyPlayer::InGame(_)) = self.players_in_lobby.get(&player_id) {
+            return Err(());
+        }
+
+        self.players_in_lobby.remove(&player_id);
+        self.rebuild_game_size_prefs();
+        Ok(())
     }
 
     /// Returns the game ID for the given player, if one has been assigned.
@@ -304,25 +326,63 @@ mod tests {
         assert!(l.add_player(3, 2).is_err());
     }
 
+    #[test]
+    fn test_player_abandon() {
+        let l = Lobby::new();
+        let player_to_leave = l.add_player(3, 3).unwrap();
+        let mut players = Vec::new();
+        players.push(l.add_player(3, 4).unwrap());
+        players.push(l.add_player(3, 5).unwrap());
+        l.abandon_lobby(player_to_leave).unwrap();
+        l.start_games(&GAME_CREATOR_NO_GAME_CREATED);
+
+        // because player 1 left the lobby nor they nor they other players should get a game
+        assert!(l.get_player_game(player_to_leave).is_none());
+        for p in &players {
+            assert!(l.get_player_game(*p).is_none());
+        }
+
+        // a new player joins
+        players.push(l.add_player(3, 5).unwrap());
+
+        // and with that the game can be started
+        l.start_games(&mock_game_creator(3, GameId(1)));
+        for p in players {
+            assert_eq!(l.get_player_game(p).map(|pg| pg.game_id), Some(GameId(1)));
+        }
+
+        assert!(l.get_player_game(player_to_leave).is_none());
+    }
+
     fn mock_game_creator(expected_game_size: usize, return_game_id: GameId) -> impl GameCreator {
         MockGameCreator {
-            expected_game_size,
-            return_game_id,
+            expected_game_size: Some(expected_game_size),
+            return_game_id: Some(return_game_id),
         }
     }
 
+    static GAME_CREATOR_NO_GAME_CREATED: MockGameCreator = MockGameCreator {
+        expected_game_size: None,
+        return_game_id: None,
+    };
+
     struct MockGameCreator {
-        expected_game_size: usize,
-        return_game_id: GameId,
+        expected_game_size: Option<usize>,
+        return_game_id: Option<GameId>,
     }
     impl GameCreator for MockGameCreator {
         fn new_game(&self, num_players: usize) -> GameId {
-            if num_players == self.expected_game_size {
-                self.return_game_id
+            if num_players
+                == self
+                    .expected_game_size
+                    .expect("new_game called unexpectedly")
+            {
+                self.return_game_id.expect("new_game called unexpectedly")
             } else {
                 panic!(format!(
                     "num_players expected={}, actual={}",
-                    self.expected_game_size, num_players
+                    self.expected_game_size.unwrap(),
+                    num_players
                 ));
             }
         }
