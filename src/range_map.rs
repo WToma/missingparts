@@ -297,35 +297,161 @@ mod tests {
         assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'b']);
     }
 
-    // #[test]
-    // fn test_partial_overlap_start() {
-    //     unimplemented!("new.start inside old");
-    // }
+    #[test]
+    fn test_partial_overlap_start() {
+        let mut r: RangeMap<u32, char> = RangeMap::new();
+        r.insert(3, 7, 'a');
+        r.insert(5, 9, 'b'); // the new range starts inside the old range
 
-    // #[test]
-    // fn test_partial_overlap_end() {
-    //     unimplemented!("new.end inside old");
-    // }
+        assert_eq!(r.non_overlapping_ranges.len(), 3);
 
-    // #[test]
-    // fn test_cover_no_gap() {
-    //     unimplemented!("the new range spans 2 or more ranges, the existing ranges don't have gaps");
-    // }
+        // 1st range contains just the old one
+        assert_eq!(r.non_overlapping_ranges[0].0.start, 3);
+        assert_eq!(r.non_overlapping_ranges[0].0.end, 5);
+        assert_eq!(r.non_overlapping_ranges[0].1, vec!['a']);
 
-    // #[test]
-    // fn test_cover_gap() {
-    //     unimplemented!(
-    //         "the new range spans 2 or more ranges, the existing ranges have gaps between them"
-    //     );
-    // }
+        // 2nd range contains both
+        assert_eq!(r.non_overlapping_ranges[1].0.start, 5);
+        assert_eq!(r.non_overlapping_ranges[1].0.end, 7);
+        assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'b']);
 
-    // #[test]
-    // fn test_new_range_inside {
-    //     unimplemented!("the new range is totally inside a single existing range");
-    // }
+        // 3rd range contains just the new one
+        assert_eq!(r.non_overlapping_ranges[2].0.start, 7);
+        assert_eq!(r.non_overlapping_ranges[2].0.end, 9);
+        assert_eq!(r.non_overlapping_ranges[2].1, vec!['b']);
+    }
 
-    // #[test]
-    // fn test_old_range_inside {
-    //     unimplemented!("the new range completely covers a single existing range");
-    // }
+    #[test]
+    fn test_partial_overlap_end() {
+        let mut r: RangeMap<u32, char> = RangeMap::new();
+        r.insert(3, 7, 'a');
+        r.insert(1, 5, 'b'); // the new range ends inside the old range
+
+        assert_eq!(r.non_overlapping_ranges.len(), 3);
+
+        // 1st range contains just the new one
+        assert_eq!(r.non_overlapping_ranges[0].0.start, 1);
+        assert_eq!(r.non_overlapping_ranges[0].0.end, 3);
+        assert_eq!(r.non_overlapping_ranges[0].1, vec!['b']);
+
+        // 2nd range contains both
+        assert_eq!(r.non_overlapping_ranges[1].0.start, 3);
+        assert_eq!(r.non_overlapping_ranges[1].0.end, 5);
+        assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'b']);
+
+        // 3rd range contains just the old one
+        assert_eq!(r.non_overlapping_ranges[2].0.start, 5);
+        assert_eq!(r.non_overlapping_ranges[2].0.end, 7);
+        assert_eq!(r.non_overlapping_ranges[2].1, vec!['a']);
+    }
+
+    #[test]
+    fn test_new_range_inside() {
+        let mut r: RangeMap<u32, char> = RangeMap::new();
+        r.insert(3, 9, 'a');
+        r.insert(5, 7, 'b'); // the new range is completely inside the old one
+
+        assert_eq!(r.non_overlapping_ranges.len(), 3);
+
+        // 1st range contains just the old one
+        assert_eq!(r.non_overlapping_ranges[0].0.start, 3);
+        assert_eq!(r.non_overlapping_ranges[0].0.end, 5);
+        assert_eq!(r.non_overlapping_ranges[0].1, vec!['a']);
+
+        // 2nd range contain both
+        assert_eq!(r.non_overlapping_ranges[1].0.start, 5);
+        assert_eq!(r.non_overlapping_ranges[1].0.end, 7);
+        assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'b']);
+
+        // 3rd range contains just the old one
+        assert_eq!(r.non_overlapping_ranges[2].0.start, 7);
+        assert_eq!(r.non_overlapping_ranges[2].0.end, 9);
+        assert_eq!(r.non_overlapping_ranges[2].1, vec!['a']);
+    }
+
+    #[test]
+    fn test_old_range_inside() {
+        let mut r: RangeMap<u32, char> = RangeMap::new();
+        r.insert(3, 9, 'a');
+        r.insert(1, 11, 'b'); // the new range completely covers the old one
+
+        assert_eq!(r.non_overlapping_ranges.len(), 3);
+
+        // 1st range contains just the new one
+        assert_eq!(r.non_overlapping_ranges[0].0.start, 1);
+        assert_eq!(r.non_overlapping_ranges[0].0.end, 3);
+        assert_eq!(r.non_overlapping_ranges[0].1, vec!['b']);
+
+        // 2nd range contain both
+        assert_eq!(r.non_overlapping_ranges[1].0.start, 3);
+        assert_eq!(r.non_overlapping_ranges[1].0.end, 9);
+        assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'b']);
+
+        // 3rd range contains just the new one
+        assert_eq!(r.non_overlapping_ranges[2].0.start, 9);
+        assert_eq!(r.non_overlapping_ranges[2].0.end, 11);
+        assert_eq!(r.non_overlapping_ranges[2].1, vec!['b']);
+    }
+
+    #[test]
+    fn test_cover_no_gap() {
+        let mut r: RangeMap<u32, char> = RangeMap::new();
+        r.insert(3, 5, 'a');
+        r.insert(5, 7, 'b');
+        r.insert(7, 9, 'c');
+        r.insert(4, 8, 'd'); // the new range partially overlaps with the 1st and 3rd, and completely covers the 2nd
+
+        assert_eq!(r.non_overlapping_ranges.len(), 5);
+
+        assert_eq!(r.non_overlapping_ranges[0].0.start, 3);
+        assert_eq!(r.non_overlapping_ranges[0].0.end, 4);
+        assert_eq!(r.non_overlapping_ranges[0].1, vec!['a']);
+
+        assert_eq!(r.non_overlapping_ranges[1].0.start, 4);
+        assert_eq!(r.non_overlapping_ranges[1].0.end, 5);
+        assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'd']);
+
+        assert_eq!(r.non_overlapping_ranges[2].0.start, 5);
+        assert_eq!(r.non_overlapping_ranges[2].0.end, 7);
+        assert_eq!(r.non_overlapping_ranges[2].1, vec!['b', 'd']);
+
+        assert_eq!(r.non_overlapping_ranges[3].0.start, 7);
+        assert_eq!(r.non_overlapping_ranges[3].0.end, 8);
+        assert_eq!(r.non_overlapping_ranges[3].1, vec!['c', 'd']);
+
+        assert_eq!(r.non_overlapping_ranges[4].0.start, 8);
+        assert_eq!(r.non_overlapping_ranges[4].0.end, 9);
+        assert_eq!(r.non_overlapping_ranges[4].1, vec!['c']);
+    }
+
+    #[test]
+    fn test_cover_gap() {
+        let mut r: RangeMap<u32, char> = RangeMap::new();
+        r.insert(3, 5, 'a');
+        r.insert(7, 9, 'c');
+        // the new range partially overlaps with both existing ranges, and completely covers the gap between them
+        r.insert(4, 8, 'd');
+
+        assert_eq!(r.non_overlapping_ranges.len(), 5);
+
+        assert_eq!(r.non_overlapping_ranges[0].0.start, 3);
+        assert_eq!(r.non_overlapping_ranges[0].0.end, 4);
+        assert_eq!(r.non_overlapping_ranges[0].1, vec!['a']);
+
+        assert_eq!(r.non_overlapping_ranges[1].0.start, 4);
+        assert_eq!(r.non_overlapping_ranges[1].0.end, 5);
+        assert_eq!(r.non_overlapping_ranges[1].1, vec!['a', 'd']);
+
+        assert_eq!(r.non_overlapping_ranges[2].0.start, 5);
+        assert_eq!(r.non_overlapping_ranges[2].0.end, 7);
+        assert_eq!(r.non_overlapping_ranges[2].1, vec!['d']);
+
+        assert_eq!(r.non_overlapping_ranges[3].0.start, 7);
+        assert_eq!(r.non_overlapping_ranges[3].0.end, 8);
+        assert_eq!(r.non_overlapping_ranges[3].1, vec!['c', 'd']);
+
+        assert_eq!(r.non_overlapping_ranges[4].0.start, 8);
+        assert_eq!(r.non_overlapping_ranges[4].0.end, 9);
+        assert_eq!(r.non_overlapping_ranges[4].1, vec!['c']);
+    }
 }
