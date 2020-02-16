@@ -7,9 +7,8 @@ use std::cmp::Ordering;
 /// # Examples
 /// ```
 /// # use missingparts::range_map::*;
-/// # use std::collections::Set;
 /// // keeps track of events in our convention center
-/// let events = RangeMap::new();
+/// let mut events = RangeMap::new();
 ///
 /// // note: a real use case should use a proper date type, instead of
 /// // strings, but strings work as well
@@ -21,17 +20,17 @@ use std::cmp::Ordering;
 ///         0 => {
 ///             assert_eq!(date_range.start, "2020-02-23");
 ///             assert_eq!(date_range.end, "2020-03-02");
-///             assert_eq!(events_in_date_range, vec!["Spring Roll Festival"]);
+///             assert_eq!(*events_in_date_range, vec!["Spring Roll Festival"]);
 ///         }
 ///         1 => {
 ///             assert_eq!(date_range.start, "2020-02-20");
 ///             assert_eq!(date_range.end, "2020-02-23");
-///             assert_eq!(events_in_date_range, vec!["Rust Conference", "Spring Roll Festival"]);
+///             assert_eq!(*events_in_date_range, vec!["Rust Conference", "Spring Roll Festival"]);
 ///         }
 ///         2 => {
 ///             assert_eq!(date_range.start, "2020-02-09");
 ///             assert_eq!(date_range.end, "2020-02-20");
-///             assert_eq!(events_in_date_range, vec!["Rust Conference"]);
+///             assert_eq!(*events_in_date_range, vec!["Rust Conference"]);
 ///         }
 ///         _ => panic!("Too many ranges returned")
 ///     }
@@ -148,6 +147,13 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
                 }
             }
         }
+    }
+
+    /// Returns a reverse iterator to the ranges in the map.
+    ///
+    /// The returned iterator is ordered by decreasing key range. The values for each range are in insertion order.
+    pub fn reverse_iterator(&self) -> impl Iterator<Item = &(NonOverlappingRange<K>, Vec<V>)> {
+        self.non_overlapping_ranges.iter().rev()
     }
 }
 
