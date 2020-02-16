@@ -166,8 +166,7 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
 /// A range that does not overlap with any other ranges in the range map. Ranges are comparable to work with `RangeMap`,
 /// their comparison is by the start of the range. Since we're assuming non-overlapping, this provides total ordering.
 ///
-/// The `start` is inclusive and the `end` is exclusive, so if `start == end` that means that the range contains exactly
-/// `start`.
+/// The `start` is inclusive and the `end` is exclusive.
 ///
 /// Note: `end < start` is an undefined situation. The `RangeMap` will never return ranges like that. If you modify
 /// the range to violate this invariant, you're on your own.
