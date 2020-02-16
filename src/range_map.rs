@@ -1,3 +1,7 @@
+//! Provides the `RangeMap` type.
+//!
+//! See the documentation for `RangeMap` for usage example.
+
 use std::cmp::Ordering;
 
 /// A map-like structure, whose speciality is that it can efficiently hold values for ranges of keys.
@@ -152,6 +156,8 @@ impl<K: Ord + Copy, V: Clone + Copy> RangeMap<K, V> {
     /// Returns a reverse iterator to the ranges in the map.
     ///
     /// The returned iterator is ordered by decreasing key range. The values for each range are in insertion order.
+    ///
+    /// See the type-level documentation for an example.
     pub fn reverse_iterator(&self) -> impl Iterator<Item = &(NonOverlappingRange<K>, Vec<V>)> {
         self.non_overlapping_ranges.iter().rev()
     }
