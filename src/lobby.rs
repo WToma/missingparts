@@ -5,7 +5,7 @@
 //! In order to start games, the [`GameCreator`](trait.GameCreator.html) must be implemented.
 
 use crate::range_map::RangeMap;
-use crate::server_core_types::GameId;
+use crate::server_core_types::{GameId, Token};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -20,7 +20,7 @@ pub trait GameCreator {
 /// The ID of a player in the lobby.
 ///
 /// Do not create instances directly, instead use the lobby's [`add_player`](struct.Lobby.html#method.add_player)
-/// method to create an instance.
+/// method to get an instance.
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PlayerIdInLobby(pub usize);
 
@@ -77,7 +77,7 @@ impl Lobby {
         &self,
         min_game_size: usize,
         max_game_size: usize,
-    ) -> Result<PlayerIdInLobby, ()> {
+    ) -> Result<(PlayerIdInLobby, Token), ()> {
         self.internal
             .write()
             .unwrap()
@@ -109,6 +109,7 @@ impl Lobby {
 
 struct NonThreadSafeLobby {
     players_in_lobby: HashMap<PlayerIdInLobby, LobbyPlayer>,
+    tokens: HashMap<PlayerIdInLobby, Token>,
     next_player_id: usize,
     game_size_prefs_ranges: RangeMap<usize, PlayerIdInLobby>,
 }
@@ -117,6 +118,7 @@ impl NonThreadSafeLobby {
     fn new() -> NonThreadSafeLobby {
         NonThreadSafeLobby {
             players_in_lobby: HashMap::new(),
+            tokens: HashMap::new(),
             next_player_id: 0,
             game_size_prefs_ranges: RangeMap::new(),
         }
@@ -126,7 +128,7 @@ impl NonThreadSafeLobby {
         &mut self,
         min_game_size: usize,
         max_game_size: usize,
-    ) -> Result<PlayerIdInLobby, ()> {
+    ) -> Result<(PlayerIdInLobby, Token), ()> {
         if min_game_size < 2 || max_game_size < min_game_size || max_game_size > 52 {
             return Err(());
         }
@@ -145,7 +147,9 @@ impl NonThreadSafeLobby {
             player_id,
             LobbyPlayer::WaitingForGame(player_waiting_for_game),
         );
-        Ok(player_id)
+        let token = Token::random();
+        self.tokens.insert(player_id, token.clone());
+        Ok((player_id, token))
     }
 
     /// Signals to the lobby that the player no longer wants to play a game.
@@ -244,16 +248,16 @@ mod tests {
     #[test]
     fn test_add_player_no_game() {
         let l = Lobby::new();
-        let player_1_id = l.add_player(2, 4).unwrap(); //     a single player joins the lobby
+        let player_1_id = l.add_player(2, 4).unwrap().0; //     a single player joins the lobby
         assert!(l.get_player_game(player_1_id).is_none()); // and has no game yet
     }
 
     #[test]
     fn test_start_game() {
         let l = Lobby::new();
-        let player_1_id = l.add_player(2, 4).unwrap(); // player 1 joins the lobby with minimum game size 2
-        let player_2_id = l.add_player(2, 4).unwrap(); // player 2 joins the lobby with minimum game size 2
-        let player_3_id = l.add_player(6, 6).unwrap(); // player 2 joins the lobby with minimum game size 6
+        let player_1_id = l.add_player(2, 4).unwrap().0; // player 1 joins the lobby with minimum game size 2
+        let player_2_id = l.add_player(2, 4).unwrap().0; // player 2 joins the lobby with minimum game size 2
+        let player_3_id = l.add_player(6, 6).unwrap().0; // player 2 joins the lobby with minimum game size 6
 
         l.start_game(&mock_game_creator(2, GameId(42))); // starting a game assigns
         assert_eq!(
@@ -276,10 +280,10 @@ mod tests {
     #[test]
     fn test_player_assignment_optimal() {
         let l = Lobby::new();
-        l.add_player(2, 4).unwrap();
-        l.add_player(2, 4).unwrap();
-        l.add_player(2, 4).unwrap();
-        l.add_player(2, 4).unwrap();
+        l.add_player(2, 4).unwrap().0;
+        l.add_player(2, 4).unwrap().0;
+        l.add_player(2, 4).unwrap().0;
+        l.add_player(2, 4).unwrap().0;
 
         // larger game sizes are preferred, so the largest possible game is started
         l.start_game(&mock_game_creator(4, GameId(42)));
@@ -289,11 +293,11 @@ mod tests {
     fn test_player_assignment_prefers_earlier_player() {
         let l = Lobby::new();
         let mut players = Vec::new();
-        players.push(l.add_player(3, 6).unwrap());
-        players.push(l.add_player(3, 4).unwrap());
-        players.push(l.add_player(2, 6).unwrap());
-        players.push(l.add_player(2, 4).unwrap());
-        let player_5_id = l.add_player(2, 4).unwrap();
+        players.push(l.add_player(3, 6).unwrap().0);
+        players.push(l.add_player(3, 4).unwrap().0);
+        players.push(l.add_player(2, 6).unwrap().0);
+        players.push(l.add_player(2, 4).unwrap().0);
+        let player_5_id = l.add_player(2, 4).unwrap().0;
         // everyone is OK with 3 and 4 player games, so a 4 player game will be started
         l.start_game(&mock_game_creator(4, GameId(42)));
 
@@ -310,11 +314,11 @@ mod tests {
     fn test_player_assignment_multiple_games() {
         let l = Lobby::new();
         let mut game1_players = Vec::new();
-        let unreasonable_player = l.add_player(12, 42).unwrap();
-        game1_players.push(l.add_player(3, 6).unwrap());
-        game1_players.push(l.add_player(3, 3).unwrap());
-        game1_players.push(l.add_player(2, 6).unwrap());
-        let first_game_2_player = l.add_player(2, 4).unwrap();
+        let unreasonable_player = l.add_player(12, 42).unwrap().0;
+        game1_players.push(l.add_player(3, 6).unwrap().0);
+        game1_players.push(l.add_player(3, 3).unwrap().0);
+        game1_players.push(l.add_player(2, 6).unwrap().0);
+        let first_game_2_player = l.add_player(2, 4).unwrap().0;
 
         // we can start a 3 player game with the first 3 players
         l.start_game(&mock_game_creator(3, GameId(1)));
@@ -327,7 +331,7 @@ mod tests {
 
         let mut game2_players = Vec::new();
         game2_players.push(first_game_2_player);
-        game2_players.push(l.add_player(2, 4).unwrap());
+        game2_players.push(l.add_player(2, 4).unwrap().0);
 
         // we can now start another 2 player game
         l.start_game(&mock_game_creator(2, GameId(2)));
@@ -361,10 +365,10 @@ mod tests {
     #[test]
     fn test_player_abandon() {
         let l = Lobby::new();
-        let player_to_leave = l.add_player(3, 3).unwrap();
+        let player_to_leave = l.add_player(3, 3).unwrap().0;
         let mut players = Vec::new();
-        players.push(l.add_player(3, 4).unwrap());
-        players.push(l.add_player(3, 5).unwrap());
+        players.push(l.add_player(3, 4).unwrap().0);
+        players.push(l.add_player(3, 5).unwrap().0);
         l.abandon_lobby(player_to_leave).unwrap();
         l.start_game(&GAME_CREATOR_NO_GAME_CREATED);
 
@@ -375,7 +379,7 @@ mod tests {
         }
 
         // a new player joins
-        players.push(l.add_player(3, 5).unwrap());
+        players.push(l.add_player(3, 5).unwrap().0);
 
         // and with that the game can be started
         l.start_game(&mock_game_creator(3, GameId(1)));

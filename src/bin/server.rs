@@ -142,10 +142,10 @@ async fn main() {
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
         .map(move |request: JoinLobbyRequest| -> Box<dyn warp::Reply> {
-            let player_id_in_lobby =
+            let player_in_lobby =
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
-            match player_id_in_lobby {
-                Ok(player_id_in_lobby) => {
+            match player_in_lobby {
+                Ok((player_id_in_lobby, _token)) => {
                     lobby_for_handler.start_game(&*game_manager_for_handler);
 
                     if let Some(PlayerAssignedToGame {
