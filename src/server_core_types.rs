@@ -19,3 +19,11 @@ impl Token {
         Token(thread_rng().sample_iter(&Alphanumeric).take(128).collect())
     }
 }
+
+/// Provides a method to verify that a given token belongs to the given entity.
+///
+/// The [`verify`](#method.verify) verifies tokens.
+pub trait TokenVerifier<T> {
+    /// Verifies that the given `token` belongs to the given `id`.
+    fn verify(&self, id: &T, token: &Token) -> bool;
+}

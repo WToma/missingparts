@@ -5,7 +5,7 @@
 //! In order to start games, the [`GameCreator`](trait.GameCreator.html) must be implemented.
 
 use crate::range_map::RangeMap;
-use crate::server_core_types::{GameId, Token};
+use crate::server_core_types::{GameId, Token, TokenVerifier};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -39,11 +39,18 @@ pub struct PlayerAssignedToGame {
 
 /// Manages the players who are waiting to join a game. Safe to access concurrently.
 ///
+/// # Usage
 /// - use [`new`](#method.new) to create a new instance.
 /// - use [`add_player`](#method.add_player) to have a new player join the lobby.
 /// - then use [`get_player_game`](#method.get_player_game) to check whether the player has been assigned to a game.
 /// - or [`abandon_lobby`](#method.abandon_lobby) to have the player leave the lobby before joining a game.
 /// - to assign players to games, use [`start_game`](#method.start_game).
+///
+/// # Tokens
+/// [`add_player`](#method.add_player) returns a token. `Lobby` implements the
+/// [`TokenVerifier`](../server_core_types/trait.TokenVerifier.html) trait, which can be used to check that
+/// a given (player ID, token) pair is valid. It's the responsibility of the user of `Lobby` to check this whenever
+/// needed.
 pub struct Lobby {
     internal: RwLock<NonThreadSafeLobby>,
 }
@@ -70,7 +77,7 @@ impl Lobby {
     }
 
     /// Adds a player to the lobby with the given preference for game size (both `min_game_size` and `max_game_size` are
-    /// inclusive). The ID of the player is returned, this can be used with
+    /// inclusive). The ID and token of the player are returned. The ID can be used with
     /// [`get_player_game`](#method.get_player_game) to query if the player has a game yet. Returns an `Err` if the
     /// given game size preferences are invalid.
     pub fn add_player(
@@ -104,6 +111,13 @@ impl Lobby {
     /// the `game_id` returned by the `game_manager`.
     pub fn start_game<T: GameCreator>(&self, game_manager: &T) {
         self.internal.write().unwrap().start_game(game_manager)
+    }
+}
+
+impl TokenVerifier<PlayerIdInLobby> for Lobby {
+    /// Verifies that the given `token` belongs to the given `player_id`.
+    fn verify(&self, player_id: &PlayerIdInLobby, token: &Token) -> bool {
+        self.internal.read().unwrap().verify_token(player_id, token)
     }
 }
 
@@ -150,6 +164,13 @@ impl NonThreadSafeLobby {
         let token = Token::random();
         self.tokens.insert(player_id, token.clone());
         Ok((player_id, token))
+    }
+
+    fn verify_token(&self, player_id: &PlayerIdInLobby, token: &Token) -> bool {
+        match self.tokens.get(player_id) {
+            Some(actual_token) if actual_token == token => true,
+            _ => false,
+        }
     }
 
     /// Signals to the lobby that the player no longer wants to play a game.
@@ -388,6 +409,17 @@ mod tests {
         }
 
         assert!(l.get_player_game(player_to_leave).is_none());
+    }
+
+    #[test]
+    fn test_token_verification() {
+        let l = Lobby::new();
+        let (player1, token1) = l.add_player(3, 3).unwrap();
+        let (player2, token2) = l.add_player(4, 4).unwrap();
+        assert!(l.verify(&player1, &token1));
+        assert!(l.verify(&player2, &token2));
+        assert!(!l.verify(&player1, &token2));
+        assert!(!l.verify(&player2, &token1));
     }
 
     fn mock_game_creator(expected_game_size: usize, return_game_id: GameId) -> impl GameCreator {
