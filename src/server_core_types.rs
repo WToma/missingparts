@@ -1,5 +1,8 @@
 //! Declares some common types for the server
 
+use std::convert::Infallible;
+use std::str::FromStr;
+
 /// The ID of a game managed by the server
 #[derive(Clone, Copy, Hash, PartialEq, Debug)]
 pub struct GameId(pub usize);
@@ -17,6 +20,13 @@ impl Token {
         use rand::{thread_rng, Rng};
 
         Token(thread_rng().sample_iter(&Alphanumeric).take(128).collect())
+    }
+}
+impl FromStr for Token {
+    type Err = Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Token(String::from(s)))
     }
 }
 

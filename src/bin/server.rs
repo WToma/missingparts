@@ -4,11 +4,13 @@ use missingparts::cards::Card;
 use missingparts::gameplay::{GameDescription, Gameplay};
 use missingparts::lobby::{GameCreator, Lobby, PlayerAssignedToGame, PlayerIdInLobby};
 use missingparts::playeraction::PlayerAction;
-use missingparts::server_core_types::GameId;
+use missingparts::server_core_types::{GameId, Token, TokenVerifier};
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use warp::Filter;
+use warp::reject::{Reject, Rejection};
+use warp::{Filter, Reply};
 
 /// A single game that's managed by the `GameManager`.
 struct ManagedGame {
@@ -145,7 +147,7 @@ async fn main() {
             let player_in_lobby =
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
             match player_in_lobby {
-                Ok((player_id_in_lobby, _token)) => {
+                Ok((player_id_in_lobby, token)) => {
                     lobby_for_handler.start_game(&*game_manager_for_handler);
 
                     if let Some(PlayerAssignedToGame {
@@ -172,6 +174,7 @@ async fn main() {
                             warp::reply::with_header(
                                 warp::reply::json(&JoinedLobbyResponse {
                                     player_id_in_lobby: player_id_in_lobby.0,
+                                    token: token.0,
                                 }),
                                 "Location",
                                 format!("/lobby/players/{}/game", player_id_in_lobby.0),
@@ -193,6 +196,18 @@ async fn main() {
     let lobby_for_handler = Arc::clone(&lobby);
     let get_lobby_player_status = warp::get()
         .and(warp::path!("lobby" / "players" / usize / "game"))
+        .and(warp::header::<Token>("Authorization"))
+        .and_then(move |player_id: usize, authorization: Token| {
+            let token_verifier_for_handler = Arc::clone(&lobby);
+            async move {
+                if token_verifier_for_handler.verify(&PlayerIdInLobby(player_id), &authorization) {
+                    Ok(player_id)
+                } else {
+                    // TODO this needs to be replaced with the proper error
+                    Err(warp::reject::custom(InvalidToken))
+                }
+            }
+        })
         .map(move |player_id| -> Box<dyn warp::Reply> {
             if let Some(PlayerAssignedToGame {
                 game_id,
@@ -216,12 +231,28 @@ async fn main() {
                     warp::http::StatusCode::NOT_FOUND,
                 ))
             }
-        });
+        })
+        .recover(handle_rejection);
 
     let lobby_actions = join_lobby.or(get_lobby_player_status);
     let all_actions = game_actions.or(lobby_actions);
 
     warp::serve(all_actions).run(([127, 0, 0, 1], 3030)).await;
+}
+
+async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
+    if let Some(InvalidToken) = err.find() {
+        Ok(warp::reply::with_status(
+            warp::reply(),
+            warp::http::StatusCode::UNAUTHORIZED,
+        ))
+    } else {
+        eprintln!("unhandled rejection: {:?}", err);
+        Ok(warp::reply::with_status(
+            warp::reply(),
+            warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+        ))
+    }
 }
 
 #[derive(Serialize)]
@@ -238,6 +269,7 @@ struct JoinLobbyRequest {
 #[derive(Serialize)]
 struct JoinedLobbyResponse {
     player_id_in_lobby: usize,
+    token: String,
 }
 
 #[derive(Serialize)]
@@ -251,3 +283,7 @@ struct JoinedGameResponse {
     game_id: usize,
     player_id_in_game: usize,
 }
+
+#[derive(Debug)]
+struct InvalidToken;
+impl Reject for InvalidToken {}
