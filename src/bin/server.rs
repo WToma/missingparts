@@ -16,14 +16,17 @@ use warp::{Filter, Reply};
 struct ManagedGame {
     gameplay: Gameplay,
     secret_cards_per_player: Vec<Card>,
+    tokens: Vec<Token>,
 }
 
 impl ManagedGame {
-    fn new(num_players: usize) -> ManagedGame {
+    fn new(tokens: Vec<Token>) -> ManagedGame {
+        let num_players = tokens.len();
         let (gameplay, secret_cards_per_player) = Gameplay::init(num_players);
         ManagedGame {
             gameplay,
             secret_cards_per_player,
+            tokens,
         }
     }
 
@@ -57,9 +60,12 @@ struct GameManager {
 
 impl GameCreator for GameManager {
     /// Starts a new game, and returns the ID of the game that can be used with `with_game` and `with_mut_game`.
-    fn new_game(&self, num_players: usize) -> GameId {
+    ///
+    /// The game will save the player tokens, and the tokens can be used to verify the players making moves on the game.
+    fn new_game(&self, player_tokens: Vec<Token>) -> GameId {
         let next_index = GameId(self.next_game_index.fetch_add(1, Ordering::SeqCst));
-        self.games.insert(next_index, ManagedGame::new(num_players));
+        self.games
+            .insert(next_index, ManagedGame::new(player_tokens));
         next_index
     }
 }

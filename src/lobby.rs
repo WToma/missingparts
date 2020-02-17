@@ -12,16 +12,16 @@ use std::sync::RwLock;
 
 /// An interface of something that can create a game. See the [`new_game`](#method.new_game) method.
 pub trait GameCreator {
-    /// Creates a new game with the specified number of players, and returns the ID of the game
-    /// that was created.
-    fn new_game(&self, num_players: usize) -> GameId;
+    /// Creates a new game with the specified players, and returns the ID of the game that was created. `tokens` are the
+    /// tokens of the players who are going to be in the game, and the player IDs should be assigned in this order.
+    fn new_game(&self, player_tokens: Vec<Token>) -> GameId;
 }
 
 /// The ID of a player in the lobby.
 ///
 /// Do not create instances directly, instead use the lobby's [`add_player`](struct.Lobby.html#method.add_player)
 /// method to get an instance.
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
 pub struct PlayerIdInLobby(pub usize);
 
 /// Represents a player's assigment to a game.
@@ -216,7 +216,19 @@ impl NonThreadSafeLobby {
             .next();
 
         if let Some(player_ids_in_game) = player_ids_in_optimal_game {
-            let game_id = game_manager.new_game(player_ids_in_game.len());
+            let tokens: Vec<Token> = player_ids_in_game
+                .iter()
+                .map(|p| {
+                    self.tokens
+                        .get(p)
+                        .expect(&format!(
+                            "player ID {:?} was selected for a game, but did not have a token",
+                            p
+                        ))
+                        .clone()
+                })
+                .collect();
+            let game_id = game_manager.new_game(tokens);
 
             for (player_id_in_game, player_id_in_lobby) in player_ids_in_game.iter().enumerate() {
                 self.players_in_lobby.insert(
@@ -439,8 +451,8 @@ mod tests {
         return_game_id: Option<GameId>,
     }
     impl GameCreator for MockGameCreator {
-        fn new_game(&self, num_players: usize) -> GameId {
-            if num_players
+        fn new_game(&self, tokens: Vec<Token>) -> GameId {
+            if tokens.len()
                 == self
                     .expected_game_size
                     .expect("new_game called unexpectedly")
@@ -450,7 +462,7 @@ mod tests {
                 panic!(format!(
                     "num_players expected={}, actual={}",
                     self.expected_game_size.unwrap(),
-                    num_players
+                    tokens.len()
                 ));
             }
         }
