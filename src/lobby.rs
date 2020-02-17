@@ -1,23 +1,51 @@
+//! Provides types and methods to manage players waiting for games.
+//!
+//! The [`Lobby`](struct.Lobby.html) type is the main way to manage the players.
+//!
+//! In order to start games, the [`GameCreator`](trait.GameCreator.html) must be implemented.
+
 use crate::range_map::RangeMap;
 use crate::server_core_types::GameId;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+/// An interface of something that can create a game. See the [`new_game`](#method.new_game) method.
 pub trait GameCreator {
     /// Creates a new game with the specified number of players, and returns the ID of the game
-    /// that was created
+    /// that was created.
     fn new_game(&self, num_players: usize) -> GameId;
 }
 
-/// The ID of a player in the lobby
+/// The ID of a player in the lobby.
+///
+/// Do not create instances directly, instead use the lobby's [`add_player`](struct.Lobby.html#method.add_player)
+/// method to create an instance.
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct PlayerIdInLobby(pub usize);
 
+/// Represents a player's assigment to a game.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlayerAssignedToGame {
+    /// The ID of the game that the player is assigned to.
     pub game_id: GameId,
+
+    /// The player ID of the player in the game.
+    ///
+    /// Note that this ID is not necessarily the same (in fact, is usually different) from the ID in the lobby which is
+    /// represented by the [`PlayerIdInLobby`](struct.PlayerIdInLobby.html) type.
     pub player_id_in_game: usize,
+}
+
+/// Manages the players who are waiting to join a game. Safe to access concurrently.
+///
+/// - use [`new`](#method.new) to create a new instance.
+/// - use [`add_player`](#method.add_player) to have a new player join the lobby.
+/// - then use [`get_player_game`](#method.get_player_game) to check whether the player has been assigned to a game.
+/// - or [`abandon_lobby`](#method.abandon_lobby) to have the player leave the lobby before joining a game.
+/// - to assign players to games, use [`start_game`](#method.start_game).
+pub struct Lobby {
+    internal: RwLock<NonThreadSafeLobby>,
 }
 
 #[derive(Clone, Copy)]
@@ -31,20 +59,20 @@ enum LobbyPlayer {
     InGame(PlayerAssignedToGame),
 }
 
-/// Manages the players who are waiting to join a game. Safe to access concurrently.
-pub struct Lobby {
-    internal: RwLock<NonThreadSafeLobby>,
-}
-
 impl Lobby {
+    /// Creates a new intance of a lobby. You can have multiple instances of the lobby, but for optimal player
+    /// assignment you should only have one and share that. However if player assignments get too slow it may make sense
+    /// to create multiple instances.
     pub fn new() -> Lobby {
         Lobby {
             internal: RwLock::new(NonThreadSafeLobby::new()),
         }
     }
 
-    /// Adds a player to the lobby with the given preference for game size. The ID of the player is returned,
-    /// this can be used with `get_player_game` to query if the player has a game yet.
+    /// Adds a player to the lobby with the given preference for game size (both `min_game_size` and `max_game_size` are
+    /// inclusive). The ID of the player is returned, this can be used with
+    /// [`get_player_game`](#method.get_player_game) to query if the player has a game yet. Returns an `Err` if the
+    /// given game size preferences are invalid.
     pub fn add_player(
         &self,
         min_game_size: usize,
@@ -56,22 +84,26 @@ impl Lobby {
             .add_player(min_game_size, max_game_size)
     }
 
-    /// Signals to the lobby that the player no longer wants to play a game.
+    /// Signals to the lobby that the player no longer wants to play a game. The `player_id` should be the one that was
+    /// returned by [`add_player`](#method.add_player).
     ///
     /// If the player is already in a game, `Err` is returned, otherwise `Ok`.
     pub fn abandon_lobby(&self, player_id: PlayerIdInLobby) -> Result<(), ()> {
         self.internal.write().unwrap().abandon_lobby(player_id)
     }
 
-    /// Returns the game ID for the given player, if one has been assigned.
+    /// Returns the game ID for the given player, if one has been assigned. The `player_id` should be the one that was
+    /// returned by [`add_player`](#method.add_player). Returns `None` if the player does not have a game assigned, or
+    /// the given `player_id` is not in the lobby (for example they have abandoned the lobby).
     pub fn get_player_game(&self, player_id: PlayerIdInLobby) -> Option<PlayerAssignedToGame> {
         self.internal.read().unwrap().get_player_game(player_id)
     }
 
-    /// Attempts to start a game for the players waiting in the lobby, respecting their game size
-    /// preferences.
-    pub fn start_games<T: GameCreator>(&self, game_manager: &T) {
-        self.internal.write().unwrap().start_games(game_manager)
+    /// Attempts to start a game for the players waiting in the lobby, respecting their game size preferences. If a game
+    /// can be started the given `game_manager` will be called to actually do that, and the players will be assigned to
+    /// the `game_id` returned by the `game_manager`.
+    pub fn start_game<T: GameCreator>(&self, game_manager: &T) {
+        self.internal.write().unwrap().start_game(game_manager)
     }
 }
 
@@ -95,7 +127,7 @@ impl NonThreadSafeLobby {
         min_game_size: usize,
         max_game_size: usize,
     ) -> Result<PlayerIdInLobby, ()> {
-        if min_game_size < 2 || max_game_size < min_game_size {
+        if min_game_size < 2 || max_game_size < min_game_size || max_game_size > 52 {
             return Err(());
         }
 
@@ -119,7 +151,7 @@ impl NonThreadSafeLobby {
     /// Signals to the lobby that the player no longer wants to play a game.
     ///
     /// If the player is already in a game, `Err` is returned, otherwise `Ok`.
-    pub fn abandon_lobby(&mut self, player_id: PlayerIdInLobby) -> Result<(), ()> {
+    fn abandon_lobby(&mut self, player_id: PlayerIdInLobby) -> Result<(), ()> {
         if let Some(LobbyPlayer::InGame(_)) = self.players_in_lobby.get(&player_id) {
             return Err(());
         }
@@ -140,7 +172,7 @@ impl NonThreadSafeLobby {
 
     /// Attempts to start a game for the players waiting in the lobby, respecting their game size
     /// preferences.
-    fn start_games<T: GameCreator>(&mut self, game_manager: &T) {
+    fn start_game<T: GameCreator>(&mut self, game_manager: &T) {
         let player_ids_in_optimal_game = self
             .game_size_prefs_ranges
             .reverse_iterator()
@@ -223,7 +255,7 @@ mod tests {
         let player_2_id = l.add_player(2, 4).unwrap(); // player 2 joins the lobby with minimum game size 2
         let player_3_id = l.add_player(6, 6).unwrap(); // player 2 joins the lobby with minimum game size 6
 
-        l.start_games(&mock_game_creator(2, GameId(42))); // starting a game assigns
+        l.start_game(&mock_game_creator(2, GameId(42))); // starting a game assigns
         assert_eq!(
             l.get_player_game(player_1_id), // player 1 as player 0
             Some(PlayerAssignedToGame {
@@ -250,7 +282,7 @@ mod tests {
         l.add_player(2, 4).unwrap();
 
         // larger game sizes are preferred, so the largest possible game is started
-        l.start_games(&mock_game_creator(4, GameId(42)));
+        l.start_game(&mock_game_creator(4, GameId(42)));
     }
 
     #[test]
@@ -263,7 +295,7 @@ mod tests {
         players.push(l.add_player(2, 4).unwrap());
         let player_5_id = l.add_player(2, 4).unwrap();
         // everyone is OK with 3 and 4 player games, so a 4 player game will be started
-        l.start_games(&mock_game_creator(4, GameId(42)));
+        l.start_game(&mock_game_creator(4, GameId(42)));
 
         for p in players {
             // the first 4 players get assigned to the game
@@ -285,7 +317,7 @@ mod tests {
         let first_game_2_player = l.add_player(2, 4).unwrap();
 
         // we can start a 3 player game with the first 3 players
-        l.start_games(&mock_game_creator(3, GameId(1)));
+        l.start_game(&mock_game_creator(3, GameId(1)));
         for p in &game1_players {
             // the first 3 players get assigned to the game
             assert_eq!(l.get_player_game(*p).map(|pg| pg.game_id), Some(GameId(1)));
@@ -298,7 +330,7 @@ mod tests {
         game2_players.push(l.add_player(2, 4).unwrap());
 
         // we can now start another 2 player game
-        l.start_games(&mock_game_creator(2, GameId(2)));
+        l.start_game(&mock_game_creator(2, GameId(2)));
         for p in game1_players {
             // the first 3 players are still assigned to the same game
             assert_eq!(l.get_player_game(p).map(|pg| pg.game_id), Some(GameId(1)));
@@ -334,7 +366,7 @@ mod tests {
         players.push(l.add_player(3, 4).unwrap());
         players.push(l.add_player(3, 5).unwrap());
         l.abandon_lobby(player_to_leave).unwrap();
-        l.start_games(&GAME_CREATOR_NO_GAME_CREATED);
+        l.start_game(&GAME_CREATOR_NO_GAME_CREATED);
 
         // because player 1 left the lobby nor they nor they other players should get a game
         assert!(l.get_player_game(player_to_leave).is_none());
@@ -346,7 +378,7 @@ mod tests {
         players.push(l.add_player(3, 5).unwrap());
 
         // and with that the game can be started
-        l.start_games(&mock_game_creator(3, GameId(1)));
+        l.start_game(&mock_game_creator(3, GameId(1)));
         for p in players {
             assert_eq!(l.get_player_game(p).map(|pg| pg.game_id), Some(GameId(1)));
         }

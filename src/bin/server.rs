@@ -146,7 +146,7 @@ async fn main() {
                 lobby_for_handler.add_player(request.min_game_size, request.max_game_size);
             match player_id_in_lobby {
                 Ok(player_id_in_lobby) => {
-                    lobby_for_handler.start_games(&*game_manager_for_handler);
+                    lobby_for_handler.start_game(&*game_manager_for_handler);
 
                     if let Some(PlayerAssignedToGame {
                         game_id,
