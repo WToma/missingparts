@@ -145,12 +145,32 @@ async fn main() {
         });
 
     let game_manager_for_handler = Arc::clone(&game_manager);
+    let token_verifier_for_handler = Arc::clone(&game_manager);
     let make_move = warp::post()
         .and(warp::path!("games" / usize / "players" / usize / "moves"))
         .and(warp::body::content_length_limit(1024 * 16))
         .and(warp::body::json())
+        .and(warp::header::<Token>("Authorization"))
+        .and_then(
+            move |game_id: usize,
+                  player_id: usize,
+                  player_action: PlayerAction,
+                  authorization: Token| {
+                let token_verifier_for_handler = Arc::clone(&token_verifier_for_handler);
+                async move {
+                    token_verifier_for_handler.with_game(GameId(game_id), |game| {
+                        if game.verify(&player_id, &authorization) {
+                            Ok((game_id, player_id, player_action.clone()))
+                        } else {
+                            Err(warp::reject::custom(InvalidToken))
+                        }
+                    })
+                }
+            },
+        )
         .map(
-            move |game_id, player_id, player_action: PlayerAction| -> Box<dyn warp::Reply> {
+            move |args: (usize, usize, PlayerAction)| -> Box<dyn warp::Reply> {
+                let (game_id, player_id, player_action) = args;
                 let action_result = game_manager_for_handler.with_mut_game(GameId(game_id), |g| {
                     g.make_move(player_id, player_action.clone())
                 });
