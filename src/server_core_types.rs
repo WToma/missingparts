@@ -19,7 +19,7 @@ impl Token {
         use rand::distributions::Alphanumeric;
         use rand::{thread_rng, Rng};
 
-        Token(thread_rng().sample_iter(&Alphanumeric).take(128).collect())
+        Token(thread_rng().sample_iter(&Alphanumeric).take(10).collect())
     }
 }
 impl FromStr for Token {

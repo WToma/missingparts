@@ -48,6 +48,14 @@ impl ManagedGame {
     }
 }
 
+impl TokenVerifier<usize> for ManagedGame {
+    /// Verifies that the given `player_id` in this game has the specified `token`.
+    fn verify(&self, player_id: &usize, token: &Token) -> bool {
+        let player_id = *player_id;
+        player_id < self.tokens.len() && self.tokens[player_id] == *token
+    }
+}
+
 /// Manages games in the server. This is the primary way games should be interacted with.
 /// Safe for concurrent access.
 ///
@@ -109,9 +117,26 @@ async fn main() {
         });
 
     let game_manager_for_handler = Arc::clone(&game_manager);
+    let token_verifier_for_handler = Arc::clone(&game_manager);
     let get_private_card = warp::get()
         .and(warp::path!("games" / usize / "players" / usize / "private"))
-        .map(move |game_id, player_id| {
+        .and(warp::header::<Token>("Authorization"))
+        .and_then(
+            move |game_id: usize, player_id: usize, authorization: Token| {
+                let token_verifier_for_handler = Arc::clone(&token_verifier_for_handler);
+                async move {
+                    token_verifier_for_handler.with_game(GameId(game_id), |game| {
+                        if game.verify(&player_id, &authorization) {
+                            Ok((game_id, player_id))
+                        } else {
+                            Err(warp::reject::custom(InvalidToken))
+                        }
+                    })
+                }
+            },
+        )
+        .map(move |args| {
+            let (game_id, player_id) = args;
             let private_card = game_manager_for_handler
                 .with_game(GameId(game_id), |g| g.get_private_card(player_id));
             warp::reply::json(&PrivateCardResponse {
@@ -209,7 +234,6 @@ async fn main() {
                 if token_verifier_for_handler.verify(&PlayerIdInLobby(player_id), &authorization) {
                     Ok(player_id)
                 } else {
-                    // TODO this needs to be replaced with the proper error
                     Err(warp::reject::custom(InvalidToken))
                 }
             }
@@ -237,11 +261,10 @@ async fn main() {
                     warp::http::StatusCode::NOT_FOUND,
                 ))
             }
-        })
-        .recover(handle_rejection);
+        });
 
     let lobby_actions = join_lobby.or(get_lobby_player_status);
-    let all_actions = game_actions.or(lobby_actions);
+    let all_actions = game_actions.or(lobby_actions).recover(handle_rejection);
 
     warp::serve(all_actions).run(([127, 0, 0, 1], 3030)).await;
 }
