@@ -191,6 +191,7 @@ async fn main() {
                                 warp::reply::json(&JoinedGameResponse {
                                     game_id: game_id.0,
                                     player_id_in_game,
+                                    token: Some(token.0),
                                 }),
                                 "Location",
                                 format!(
@@ -249,6 +250,7 @@ async fn main() {
                         warp::reply::json(&JoinedGameResponse {
                             game_id: game_id.0,
                             player_id_in_game,
+                            token: None,
                         }),
                         "Location",
                         format!("/games/{}/players/{}/private", game_id.0, player_id_in_game),
@@ -311,6 +313,9 @@ struct InvalidGameSizePreference {
 struct JoinedGameResponse {
     game_id: usize,
     player_id_in_game: usize,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
 }
 
 #[derive(Debug)]
