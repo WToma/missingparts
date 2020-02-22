@@ -1,6 +1,7 @@
 pub mod actionerror;
 pub mod cards;
 pub mod gameplay;
+pub mod handlers;
 pub mod lobby;
 pub mod playeraction;
 pub mod range_map;
