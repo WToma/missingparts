@@ -65,7 +65,11 @@
                         }
                     ]
                 }
-            }
+            },
+            "required": [
+                "suit",
+                "rank"
+            ]
         },
         "player_private_response": {
             "title": "API response to the player private info request",
@@ -75,7 +79,15 @@
                 "missing_part": {
                     "$ref": "#/definitions/card"
                 }
-            }
+            },
+            "required": [
+                "missing_part"
+            ]
         }
-    }
+    },
+    "oneOf": [
+        {
+            "$ref": "#/definitions/player_private_response"
+        }
+    ]
 }

@@ -3,6 +3,21 @@
 import sys
 import requests
 from typing import Optional
+import jsonschema
+import json
+import copy
+
+
+class SchemaValidatorHelper:
+
+    def __init__(self, schema_file: str):
+        self.schema = json.load(open(schema_file))
+
+    def validate(self, json, type_name: str):
+        schema = copy.deepcopy(self.schema)
+        del schema["oneOf"]
+        schema["$ref"] = f"#/definitions/{type_name}"
+        jsonschema.validate(json, schema)
 
 
 class PlayerGameState:
@@ -35,8 +50,9 @@ class Player:
 class Backend:
     server: str
 
-    def __init__(self, server: str):
+    def __init__(self, server: str, schema: SchemaValidatorHelper):
         self.server = server
+        self.schema = schema
 
     def join_lobby(self, min_game_size: int, max_game_size: int) -> Player:
         resp = requests.post(f"http://{self.server}/lobby",
@@ -87,7 +103,7 @@ class Backend:
                 headers={"Authorization": player.token})
             if resp.status_code == 200:
                 response_json = resp.json()
-
+                schema.validate(response_json, "player_private_response")
                 state = PlayerGameState(
                     secret_card=response_json["missing_part"])
                 player.game_state = state
@@ -149,6 +165,9 @@ def join_2_players_and_make_single_move(backend: Backend):
 
 if __name__ == '__main__':
     server = sys.argv[1]
+    schema_file = sys.argv[2]
     print("running against server", server)
-    backend = Backend(server)
+    print("validating against schema", schema_file)
+    schema = SchemaValidatorHelper(schema_file)
+    backend = Backend(server, schema)
     join_2_players_and_make_single_move(backend)
