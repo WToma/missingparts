@@ -116,9 +116,11 @@ class Backend:
 
     def make_move(self, player: Player):
         if player.game_state is not None:
+            move = player.game_state.get_valid_action()
+            schema.validate(move, "player_action")
             resp = requests.post(
                 f"http://{self.server}/games/{player.game_id}/players/{player.player_id}/moves",
-                json=player.game_state.get_valid_action(),
+                json=move,
                 headers={"Authorization": player.token})
             if resp.status_code == 200:
                 self.refresh_game_state(player)

@@ -356,6 +356,190 @@
                 "players",
                 "state"
             ]
+        },
+        "player_action": {
+            "title": "Player Action",
+            "description": "An action that a player can take when it's their turn, or to complete an in-progress action.",
+            "oneOf": [
+                {
+                    "title": "Scavenge",
+                    "description": "Draw 3 cards from the draw pile, and choose one to keep. The other 2 go into the discard",
+                    "const": "Scavenge"
+                },
+                {
+                    "title": "Finish Scavenge",
+                    "description": "This action can only be used when a scavenge is in progress, to choose the card to keep. This card must be one of the scavenged cards indicated in the game state",
+                    "type": "object",
+                    "properties": {
+                        "FinishScavenge": {
+                            "type": "object",
+                            "properties": {
+                                "card": {
+                                    "description": "The card to pick from the scavenged cards to keep",
+                                    "$ref": "#/definitions/card"
+                                }
+                            },
+                            "required": [
+                                "card"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "FinishScavenge"
+                    ]
+                },
+                {
+                    "title": "Share",
+                    "description": "Draw 3 cards from the pile. The top 2 will go to this player, the 3rd one will go to the selected other player.",
+                    "type": "object",
+                    "properties": {
+                        "Share": {
+                            "type": "object",
+                            "properties": {
+                                "with_player": {
+                                    "description": "The player who should receive one card",
+                                    "$ref": "#/definitions/player_id_in_game"
+                                }
+                            },
+                            "required": [
+                                "with_player"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "Share"
+                    ]
+                },
+                {
+                    "title": "Trade",
+                    "description": "Trade a card 1:1 with another player. The other player must accept the offer. If they reject the offer, the initiating player can choose another action to take.",
+                    "type": "object",
+                    "properties": {
+                        "Trade": {
+                            "type": "object",
+                            "properties": {
+                                "with_player": {
+                                    "description": "The recipient of the trade",
+                                    "$ref": "#/definitions/player_id_in_game"
+                                },
+                                "offer": {
+                                    "description": "The offer given to the recipient player",
+                                    "$ref": "#/definitions/trade_offer"
+                                }
+                            },
+                            "required": [
+                                "with_player",
+                                "offer"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "Trade"
+                    ]
+                },
+                {
+                    "title": "Accept Trade Offer",
+                    "description": "When another player offers a trade, this action can be taken by the target player to accept the offer. The offer is indicated in the game state",
+                    "const": "TradeAccept"
+                },
+                {
+                    "title": "Reject Trade Offer",
+                    "description": "When another player offers a trade, this action can be taken by the target player to reject the offer. The offer is indicated in the game state",
+                    "const": "TradeReject"
+                },
+                {
+                    "title": "Steal",
+                    "description": "Steal a card from another player",
+                    "type": "object",
+                    "properties": {
+                        "Steal": {
+                            "type": "object",
+                            "properties": {
+                                "from_player": {
+                                    "description": "The player to steal from",
+                                    "$ref": "#/definitions/player_id_in_game"
+                                },
+                                "card": {
+                                    "description": "The card to steal from the other player",
+                                    "$ref": "#/definitions/card"
+                                }
+                            },
+                            "required": [
+                                "from_player",
+                                "card"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "Steal"
+                    ]
+                },
+                {
+                    "title": "Scrap",
+                    "description": "Discard any 4 cards from the player's gathered parts, and pick another card from the discard pile",
+                    "type": "object",
+                    "properties": {
+                        "Scrap": {
+                            "type": "object",
+                            "properties": {
+                                "player_cards": {
+                                    "description": "the cards to be discarded",
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/card"
+                                    }
+                                },
+                                "for_discard_card": {
+                                    "description": "The card to take from the discard pile",
+                                    "$ref": "#/definitions/card"
+                                }
+                            },
+                            "required": [
+                                "player_cards",
+                                "for_discard_card"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "Scrap"
+                    ]
+                },
+                {
+                    "title": "Escape",
+                    "description": "Ecape from the scrapyard. This can be done if the player has satisfied the escape condition",
+                    "const": "Escape"
+                },
+                {
+                    "title": "Skip",
+                    "description": "Do not take any action, advance to the next player",
+                    "const": "Skip"
+                },
+                {
+                    "title": "Cheat: get Cards",
+                    "description": "Add the specified cards to the player's gathered parts. This action can be only taken by test players. Note that this can introduce duplicate cards in the game",
+                    "type": "object",
+                    "properties": {
+                        "CheatGetCards": {
+                            "type": "object",
+                            "properties": {
+                                "cards": {
+                                    "description": "the cards to add to the player's gathered parts.",
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/card"
+                                    }
+                                }
+                            },
+                            "required": [
+                                "cards"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "CheatGetCards"
+                    ]
+                }
+            ]
         }
     },
     "oneOf": [
@@ -370,6 +554,9 @@
         },
         {
             "$ref": "#/definitions/game_description"
+        },
+        {
+            "$ref": "#/definitions/player_action"
         }
     ]
 }
