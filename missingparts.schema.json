@@ -72,22 +72,91 @@
             ]
         },
         "player_private_response": {
-            "title": "API response to the player private info request",
-            "description": "Contains the secret information of the player",
+            "title": "Player Private Info Response",
+            "description": "Contains the secret information of the player. Sent as a response to the player private info request.",
             "type": "object",
             "properties": {
                 "missing_part": {
+                    "description": "The part that the player needs to gather in the game in order to win.",
                     "$ref": "#/definitions/card"
                 }
             },
             "required": [
                 "missing_part"
             ]
+        },
+        "token": {
+            "type": "string",
+            "description": "The secret code that the client must send as the value of the \"Authorization\" header when querying the lobby status, making moves, or querying the private info of the player"
+        },
+        "game_id": {
+            "type": "integer",
+            "description": "An identifier for a game"
+        },
+        "player_id_in_game": {
+            "type": "integer",
+            "description": "Identifies a player in a game"
+        },
+        "player_id_in_lobby": {
+            "type": "integer",
+            "description": "Identifies a player in the lobby"
+        },
+        "player_joined_lobby": {
+            "title": "Player Joined the Lobby",
+            "description": "Contains the player's token and lobby ID. Sent as a response to the lobby join request, if the player did not directly join a game.",
+            "type": "object",
+            "properties": {
+                "token": {
+                    "$ref": "#/definitions/token"
+                },
+                "player_id_in_lobby": {
+                    "$ref": "#/definitions/player_id_in_lobby"
+                }
+            },
+            "required": [
+                "token",
+                "player_id_in_lobby"
+            ]
+        },
+        "player_joined_game_directly": {
+            "title": "Player Joined a Game",
+            "description": "The player wanted to join the lobby, but they directly joined a game.",
+            "type": "object",
+            "properties": {
+                "token": {
+                    "$ref": "#/definitions/token"
+                },
+                "game_id": {
+                    "$ref": "#/definitions/game_id"
+                },
+                "player_id_in_game": {
+                    "$ref": "#/definitions/player_id_in_game"
+                }
+            },
+            "required": [
+                "token",
+                "game_id",
+                "player_id_in_game"
+            ]
+        },
+        "join_lobby_response": {
+            "description": "Sent as a response to the join lobby request.",
+            "oneOf": [
+                {
+                    "$ref": "#/definitions/player_joined_lobby"
+                },
+                {
+                    "$ref": "#/definitions/player_joined_game_directly"
+                }
+            ]
         }
     },
     "oneOf": [
         {
             "$ref": "#/definitions/player_private_response"
+        },
+        {
+            "$ref": "#/definitions/join_lobby_response"
         }
     ]
 }

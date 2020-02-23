@@ -62,6 +62,7 @@ class Backend:
 
         if resp.status_code == 201:
             response_json = resp.json()
+            schema.validate(response_json, "join_lobby_response")
             if "player_id_in_lobby" in response_json:
                 return Player(
                     lobby_id=response_json["player_id_in_lobby"],
