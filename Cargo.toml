@@ -9,8 +9,9 @@ edition = "2018"
 [dependencies]
 rand = "0.5.5"
 serde = { version = "1.0.x", features = ["derive"] }
-tokio = { version = "0.2", features = ["macros"] }
+tokio = { version = "0.2", features = ["full"] }
 warp = "0.2"
+hyper = "0.13"
 chashmap = "2.2.x"
 
 [profile.dev]
