@@ -149,6 +149,23 @@
                     "$ref": "#/definitions/player_joined_game_directly"
                 }
             ]
+        },
+        "found_game_response": {
+            "title": "Found Game Response",
+            "description": "Sent as a response to the get game request for a lobby player",
+            "type": "object",
+            "properties": {
+                "game_id": {
+                    "$ref": "#/definitions/game_id"
+                },
+                "player_id_in_game": {
+                    "$ref": "#/definitions/player_id_in_game"
+                }
+            },
+            "required": [
+                "game_id",
+                "player_id_in_game"
+            ]
         }
     },
     "oneOf": [
@@ -157,6 +174,9 @@
         },
         {
             "$ref": "#/definitions/join_lobby_response"
+        },
+        {
+            "$ref": "#/definitions/found_game_response"
         }
     ]
 }

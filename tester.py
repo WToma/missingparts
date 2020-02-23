@@ -88,6 +88,7 @@ class Backend:
                 return False
             elif resp.status_code == 307:
                 response_json = resp.json()
+                schema.validate(response_json, "found_game_response")
                 if "player_id_in_game" in response_json:
                     player.game_id = response_json["game_id"]
                     player.player_id = response_json["player_id_in_game"]
