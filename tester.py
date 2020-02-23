@@ -28,9 +28,6 @@ class PlayerGameState:
     def update_game_description(self, json):
         self.game_description = json
 
-    def get_valid_action(self):
-        return "Scavenge"
-
 
 class Player:
     lobby_id: Optional[int]
@@ -114,9 +111,8 @@ class Backend:
         else:
             raise(Exception("tried to check for secret card on player not in a game"))
 
-    def make_move(self, player: Player):
+    def make_move(self, player: Player, move):
         if player.game_state is not None:
-            move = player.game_state.get_valid_action()
             schema.validate(move, "player_action")
             resp = requests.post(
                 f"http://{self.server}/games/{player.game_id}/players/{player.player_id}/moves",
@@ -165,7 +161,7 @@ def join_2_players_and_make_single_move(backend: Backend):
         raise(Exception("user2 did not have a secret card after checking"))
     print(f"user2 secret card: {user2.game_state.secret_card}")
     backend.refresh_game_state(user1)
-    backend.make_move(user1)
+    backend.make_move(user1, "Scavenge")
     print(f"game state for user2: {user1.game_state.game_description}")
 
 
