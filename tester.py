@@ -10,6 +10,12 @@ class PlayerGameState:
     def __init__(self, secret_card):
         self.secret_card = secret_card
 
+    def update_game_description(self, json):
+        self.game_description = json
+
+    def get_valid_action(self):
+        return "Scavenge"
+
 
 class Player:
     lobby_id: Optional[int]
@@ -85,8 +91,34 @@ class Backend:
                 state = PlayerGameState(
                     secret_card=response_json["missing_part"])
                 player.game_state = state
+                return
+            raise(Backend.to_error("check for secret card", resp))
         else:
             raise(Exception("tried to check for secret card on player not in a game"))
+
+    def make_move(self, player: Player):
+        if player.game_state is not None:
+            resp = requests.post(
+                f"http://{self.server}/games/{player.game_id}/players/{player.player_id}/moves",
+                json=player.game_state.get_valid_action(),
+                headers={"Authorization": player.token})
+            if resp.status_code == 200:
+                self.refresh_game_state(player)
+                return
+            raise(Backend.to_error("make a move", resp))
+        else:
+            raise(Exception("tried to make move with player without a game state"))
+
+    def refresh_game_state(self, player: Player):
+        if player.game_state is not None:
+            # this endpoint is public
+            resp = requests.get(f"http://{self.server}/games/{player.game_id}")
+            if resp.status_code == 200:
+                player.game_state.update_game_description(resp.json())
+                return
+            raise(Backend.to_error("get game state", resp))
+        else:
+            raise(Exception("tried to get game state for player without a game state"))
 
     @classmethod
     def to_error(cls, operation: str, resp: requests.Response) -> Exception:
@@ -110,6 +142,9 @@ def join_2_players_and_make_single_move(backend: Backend):
     if user2.game_state is None:
         raise(Exception("user2 did not have a secret card after checking"))
     print(f"user2 secret card: {user2.game_state.secret_card}")
+    backend.refresh_game_state(user1)
+    backend.make_move(user1)
+    print(f"game state for user2: {user1.game_state.game_description}")
 
 
 if __name__ == '__main__':
