@@ -1,0 +1,81 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+        "card": {
+            "title": "Card",
+            "description": "A playing card",
+            "type": "object",
+            "properties": {
+                "suit": {
+                    "oneOf": [
+                        {
+                            "const": "Clubs"
+                        },
+                        {
+                            "const": "Diamonds"
+                        },
+                        {
+                            "const": "Hearts"
+                        },
+                        {
+                            "const": "Spades"
+                        }
+                    ]
+                },
+                "rank": {
+                    "oneOf": [
+                        {
+                            "const": "Ace"
+                        },
+                        {
+                            "const": "Two"
+                        },
+                        {
+                            "const": "Three"
+                        },
+                        {
+                            "const": "Four"
+                        },
+                        {
+                            "const": "Five"
+                        },
+                        {
+                            "const": "Six"
+                        },
+                        {
+                            "const": "Seven"
+                        },
+                        {
+                            "const": "Eight"
+                        },
+                        {
+                            "const": "Nine"
+                        },
+                        {
+                            "const": "Ten"
+                        },
+                        {
+                            "const": "Jack"
+                        },
+                        {
+                            "const": "Queen"
+                        },
+                        {
+                            "const": "King"
+                        }
+                    ]
+                }
+            }
+        },
+        "player_private_response": {
+            "title": "API response to the player private info request",
+            "description": "Contains the secret information of the player",
+            "type": "object",
+            "properties": {
+                "missing_part": {
+                    "$ref": "#/definitions/card"
+                }
+            }
+        }
+    }
+}
