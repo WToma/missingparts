@@ -284,14 +284,14 @@
                             "description": "the player who received the trade offer. This player must approve or reject the trade",
                             "$ref": "#/definitions/player_id_in_game"
                         },
-                        "trade_offer": {
+                        "offer": {
                             "$ref": "#/definitions/trade_offer"
                         }
                     },
                     "required": [
                         "initiating_player",
                         "trading_with_player",
-                        "trade_offer"
+                        "offer"
                     ]
                 }
             },

@@ -20,6 +20,46 @@ class SchemaValidatorHelper:
         jsonschema.validate(json, schema)
 
 
+class PlayerActions:
+    @staticmethod
+    def scavenge():
+        return "Scavenge"
+
+    @staticmethod
+    def finish_scavenge(game_description, index_to_pick: int = 0):
+        card = game_description["state"]["WaitingForScavengeComplete"]["scavenged_cards"][index_to_pick]
+        move = {
+            "FinishScavenge": {
+                "card": card
+            }
+        }
+        return move
+
+    @staticmethod
+    def trade(game_description, offering_player: int, with_player: int, offered_index: int = 0, for_card_index: int = 0):
+        try:
+            offered_card = game_description["players"][offering_player]["gathered_parts"][offered_index]
+            for_card = game_description["players"][with_player]["gathered_parts"][for_card_index]
+        except:
+            print("failed to assemble trade action")
+            print(game_description)
+            raise
+        move = {
+            "Trade": {
+                "with_player": with_player,
+                "offer": {
+                    "offered": offered_card,
+                    "in_exchange": for_card
+                }
+            }
+        }
+        return move
+
+    @staticmethod
+    def accept_trade():
+        return "TradeAccept"
+
+
 class PlayerGameState:
 
     def __init__(self, secret_card):
@@ -143,7 +183,7 @@ class Backend:
         return Exception(f"failed to {operation}: unexpected response: {resp.status_code}: {resp.text}")
 
 
-def join_2_players_and_make_single_move(backend: Backend):
+def join_2_players_scavenge_trade(backend: Backend):
     user1 = backend.join_lobby(2, 4)
     user2 = backend.join_lobby(2, 4)
     backend.check_for_game(user1)
@@ -152,6 +192,13 @@ def join_2_players_and_make_single_move(backend: Backend):
 
     print(f"user1 in game {user1.game_id} (player {user1.player_id})")
     print(f"user2 in game {user2.game_id} (player {user2.player_id})")
+    if user1.game_id != user2.game_id:
+        raise(Exception(
+            "the 2 users are in different games (this is a deficiency of the testing tool)"))
+
+    assert user1.player_id is not None
+    assert user2.player_id is not None
+
     backend.check_secret_card(user1)
     if user1.game_state is None:
         raise(Exception("user1 did not have a secret card after checking"))
@@ -160,9 +207,25 @@ def join_2_players_and_make_single_move(backend: Backend):
     if user2.game_state is None:
         raise(Exception("user2 did not have a secret card after checking"))
     print(f"user2 secret card: {user2.game_state.secret_card}")
+
+    # do a scavenge each so that they get some cards
+
+    backend.make_move(user1, PlayerActions.scavenge())
+    backend.make_move(
+        user1, PlayerActions.finish_scavenge(user1.game_state.game_description))
+
+    backend.make_move(user2, PlayerActions.scavenge())
+    backend.make_move(
+        user2, PlayerActions.finish_scavenge(user2.game_state.game_description))
+
+    # then do a trade so that we also exercise the trade state validation
+
+    # (this is needed because player2's card is not reflected in the game state yet)
     backend.refresh_game_state(user1)
-    backend.make_move(user1, "Scavenge")
-    print(f"game state for user2: {user1.game_state.game_description}")
+
+    backend.make_move(user1, PlayerActions.trade(
+        user1.game_state.game_description, offering_player=user1.player_id, with_player=user2.player_id))
+    backend.make_move(user2, PlayerActions.accept_trade())
 
 
 if __name__ == '__main__':
@@ -172,4 +235,4 @@ if __name__ == '__main__':
     print("validating against schema", schema_file)
     schema = SchemaValidatorHelper(schema_file)
     backend = Backend(server, schema)
-    join_2_players_and_make_single_move(backend)
+    join_2_players_scavenge_trade(backend)
