@@ -132,7 +132,9 @@ class Backend:
             # this endpoint is public
             resp = requests.get(f"http://{self.server}/games/{player.game_id}")
             if resp.status_code == 200:
-                player.game_state.update_game_description(resp.json())
+                response_json = resp.json()
+                schema.validate(response_json, "game_description")
+                player.game_state.update_game_description(response_json)
                 return
             raise(Backend.to_error("get game state", resp))
         else:

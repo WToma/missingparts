@@ -166,6 +166,196 @@
                 "game_id",
                 "player_id_in_game"
             ]
+        },
+        "trade_offer": {
+            "type": "object",
+            "properties": {
+                "offered": {
+                    "description": "the card that is being offered. If the trade is approved, this card will go from the initiating player to the trade recipient.",
+                    "$ref": "#/definitions/card"
+                },
+                "in_exchange": {
+                    "description": "the card that is being asked for. If the trade is approved, this card will go from the trade recipient to the initiating player.",
+                    "$ref": "#/definitions/card"
+                }
+            },
+            "required": [
+                "offered",
+                "in_exchange"
+            ]
+        },
+        "player_description": {
+            "type": "object",
+            "properties": {
+                "gathered_parts": {
+                    "description": "the cards that the player has",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/card"
+                    }
+                },
+                "escaped": {
+                    "description": "true if the player has escaped, false otherwise",
+                    "type": "boolean"
+                },
+                "moves_left": {
+                    "description": "how many moves the player has left. If missing (or null) they have infinite moves left, otherwise the specified number. 0 means the player is out of moves.",
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "gathered_parts",
+                "escaped"
+            ]
+        },
+        "game_state_waiting_for_player_action": {
+            "title": "Waiting for Player Action",
+            "description": "the game waiting for the given player to take any turn action",
+            "type": "object",
+            "properties": {
+                "WaitingForPlayerAction": {
+                    "type": "object",
+                    "description": "the player who needs to take a turn action to advance the game",
+                    "properties": {
+                        "player": {
+                            "$ref": "#/definitions/player_id_in_game"
+                        }
+                    },
+                    "required": [
+                        "player"
+                    ]
+                }
+            },
+            "required": [
+                "WaitingForPlayerAction"
+            ]
+        },
+        "game_state_waiting_for_scavenge_complete": {
+            "title": "Waiting for Scavenge Complete",
+            "description": "the game is waiting for the given player to complete the Scavenge action by choosing one of the cards to keep",
+            "type": "object",
+            "properties": {
+                "WaitingForScavengeComplete": {
+                    "type": "object",
+                    "properties": {
+                        "player": {
+                            "description": "the player who needs to finish the Scavenge action",
+                            "$ref": "#/definitions/player_id_in_game"
+                        },
+                        "scavenged_cards": {
+                            "type": "array",
+                            "description": "the cards that the Scavenge action unearthed. One of these must be chosen by the player to keep to finish the Scavenge",
+                            "items": {
+                                "$ref": "#/definitions/card"
+                            }
+                        }
+                    },
+                    "required": [
+                        "player",
+                        "scavenged_cards"
+                    ]
+                }
+            },
+            "required": [
+                "WaitingForScavengeComplete"
+            ]
+        },
+        "game_state_waiting_for_trade_confirmation": {
+            "title": "Waiting for Trade Confirmation",
+            "description": "the game is waiting for a player who was a party of a Trade action to approve or reject the trade",
+            "type": "object",
+            "properties": {
+                "WaitingForTradeConfirmation": {
+                    "type": "object",
+                    "properties": {
+                        "initiating_player": {
+                            "description": "the player who initiated the trade",
+                            "$ref": "#/definitions/player_id_in_game"
+                        },
+                        "trading_with_player": {
+                            "description": "the player who received the trade offer. This player must approve or reject the trade",
+                            "$ref": "#/definitions/player_id_in_game"
+                        },
+                        "trade_offer": {
+                            "$ref": "#/definitions/trade_offer"
+                        }
+                    },
+                    "required": [
+                        "initiating_player",
+                        "trading_with_player",
+                        "trade_offer"
+                    ]
+                }
+            },
+            "required": [
+                "WaitingForTradeConfirmation"
+            ]
+        },
+        "game_state_finished": {
+            "title": "Finished",
+            "description": "The game has finished, none of the players can make any more moves",
+            "const": "Finished"
+        },
+        "game_state": {
+            "description": "The game's core state, which determined which are the valid moves the next player can take",
+            "oneOf": [
+                {
+                    "$ref": "#/definitions/game_state_finished"
+                },
+                {
+                    "$ref": "#/definitions/game_state_waiting_for_player_action"
+                },
+                {
+                    "$ref": "#/definitions/game_state_waiting_for_scavenge_complete"
+                },
+                {
+                    "$ref": "#/definitions/game_state_waiting_for_trade_confirmation"
+                }
+            ]
+        },
+        "game_description": {
+            "title": "Game Description",
+            "description": "Describes the public state of the game. This is what all players and spectators can see.",
+            "type": "object",
+            "properties": {
+                "num_cards_in_draw": {
+                    "description": "How many cards are there in the draw pile",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 52
+                },
+                "discard": {
+                    "description": "the cards in the discard pile",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/card"
+                    }
+                },
+                "players": {
+                    "description": "the players in the game. The array is indexed by the player identifiers",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/player_description"
+                    }
+                },
+                "state": {
+                    "$ref": "#/definitions/game_state"
+                }
+            },
+            "required": [
+                "num_cards_in_draw",
+                "discard",
+                "players",
+                "state"
+            ]
         }
     },
     "oneOf": [
@@ -177,6 +367,9 @@
         },
         {
             "$ref": "#/definitions/found_game_response"
+        },
+        {
+            "$ref": "#/definitions/game_description"
         }
     ]
 }
