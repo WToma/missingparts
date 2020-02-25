@@ -36,18 +36,19 @@ async fn missingparts_service(
                             .body(Body::from(serde_json::to_string(&resp).unwrap()))
                             .unwrap())
                     }
-                    Err(()) => Ok(Response::builder()
-                        // TODO: fill in the proper error about the game size being invalid
-                        .status(StatusCode::BAD_REQUEST)
-                        .body(Body::empty())
-                        .unwrap()),
+                    Err(()) => {
+                        let resp = InvalidGameSizePreference {
+                            min_game_size: body.min_game_size,
+                            max_game_size: body.max_game_size,
+                        };
+                        Ok(Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(Body::from(serde_json::to_string(&resp).unwrap()))
+                            .unwrap())
+                    }
                 }
             }
-            Err(_) => Ok(Response::builder()
-                // TODO: this is inaccurate, since it can also be an error reading the request
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::empty())
-                .unwrap()),
+            Err(e) => Ok(e.into()),
         }
     } else {
         Ok(Response::builder()
@@ -98,10 +99,16 @@ struct JoinedLobbyResponse {
     token: String,
 }
 
+#[derive(Serialize)]
+struct InvalidGameSizePreference {
+    min_game_size: usize,
+    max_game_size: usize,
+}
+
 enum BodyParseError {
     UnsupportedContentType(String),
     UnsupportedCharset(String),
-    RequestTooLarge(usize),
+    RequestTooLarge(usize, usize),
     BodyReadingError(HyperError),
     ContentLengthMissing,
     EncodingError(str::Utf8Error),
@@ -127,6 +134,61 @@ impl From<serde_json::Error> for BodyParseError {
 impl From<json5::Error> for BodyParseError {
     fn from(e: json5::Error) -> BodyParseError {
         BodyParseError::Json5Error(e)
+    }
+}
+impl Into<Response<Body>> for BodyParseError {
+    fn into(self) -> Response<Body> {
+        use BodyParseError::*;
+        let (code, message) = match self {
+            UnsupportedContentType(content_type) => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                format!(
+                    "unsupported content type '{}'. Try 'application/json'",
+                    content_type
+                ),
+            ),
+            UnsupportedCharset(charset) => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                format!(
+                    "unsupported charset '{}'. the request body must be charset=utf8",
+                    charset
+                ),
+            ),
+            RequestTooLarge(size, max_size) => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                format!(
+                    "body must be not larger than {} bytes, was {}",
+                    max_size, size
+                ),
+            ),
+            ContentLengthMissing => (
+                StatusCode::LENGTH_REQUIRED,
+                String::from("Content-Length header must be specified"),
+            ),
+            BodyReadingError(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("failed to read the request body"),
+            ),
+            EncodingError(utf8_error) => (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "the request body was not parseable as UTF-8 at position {}",
+                    utf8_error.valid_up_to()
+                ),
+            ),
+            JsonError(e) => (
+                StatusCode::BAD_REQUEST,
+                format!("could not parse the json request: {}", e),
+            ),
+            Json5Error(e) => (
+                StatusCode::BAD_REQUEST,
+                format!("could not parse the json5 request: {}", e),
+            ),
+        };
+        Response::builder()
+            .status(code)
+            .body(Body::from(message))
+            .unwrap()
     }
 }
 
@@ -160,7 +222,7 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
         .ok_or(ContentLengthMissing)?;
 
     if content_length > max_content_length {
-        return Err(RequestTooLarge(content_length));
+        return Err(RequestTooLarge(content_length, max_content_length));
     }
 
     let (parts, body) = req.into_parts();
