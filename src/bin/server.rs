@@ -3,6 +3,8 @@ use std::fmt;
 use std::str;
 use std::sync::Arc;
 
+use http::request::Parts;
+
 use hyper::header::{HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error as HyperError, Method, Request, Response, Server, StatusCode};
@@ -18,12 +20,13 @@ async fn missingparts_service(
     req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
     if req.method() == &Method::POST && req.uri().path() == "/lobby" {
-        let req: Result<Request<JoinLobbyRequest>, BodyParseError> =
-            deserialize_by_content_type(req, 1024).await;
-        match req {
-            Ok(req) => {
-                let accept = Accept::from(req.headers().get_all(ACCEPT));
-                let body = req.into_body();
+        let (parts, body) = req.into_parts();
+        let mut rich_parts = RichParts::from(parts);
+        let body: Result<JoinLobbyRequest, BodyParseError> =
+            deserialize_by_content_type(&mut rich_parts, body, 1024).await;
+        match body {
+            Ok(body) => {
+                let accept = Accept::from(rich_parts.parts.headers.get_all(ACCEPT));
                 let add_player_result = lobby.add_player(body.min_game_size, body.max_game_size);
                 match add_player_result {
                     Ok((player_id_in_lobby, token)) => {
@@ -211,12 +214,14 @@ impl Into<Response<Body>> for BodyParseError {
 }
 
 async fn deserialize_by_content_type<T: de::DeserializeOwned>(
-    req: Request<Body>,
+    parts: &mut RichParts,
+    body: Body,
     max_content_length: usize,
-) -> Result<Request<T>, BodyParseError> {
+) -> Result<T, BodyParseError> {
     use BodyParseError::*;
-    let content_type = req
-        .headers()
+    let content_type = parts
+        .parts
+        .headers
         .get(CONTENT_TYPE)
         .iter()
         .next()
@@ -230,8 +235,9 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
     };
     let content_type = &content_type.content_type;
 
-    let content_length: usize = req
-        .headers()
+    let content_length: usize = parts
+        .parts
+        .headers
         .get(CONTENT_LENGTH)
         .iter()
         .next()
@@ -243,17 +249,16 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
         return Err(RequestTooLarge(content_length, max_content_length));
     }
 
-    let (parts, body) = req.into_parts();
     let full_body = hyper::body::to_bytes(body).await?;
     let full_body_str = str::from_utf8(&full_body)?;
 
     // TODO: check for content type before reading the body
     if content_type == &MimeType::json() {
         let body = serde_json::de::from_str(full_body_str)?;
-        Ok(Request::from_parts(parts, body))
+        Ok(body)
     } else if content_type == &MimeType::json5() {
         let body = json5::from_str(full_body_str)?;
-        Ok(Request::from_parts(parts, body))
+        Ok(body)
     } else {
         Err(UnsupportedContentType(content_type.clone()))
     }
@@ -427,27 +432,27 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
         }
     }
 }
-struct RichRequest<'a> {
-    req: &'a Request<Body>,
+struct RichParts {
+    parts: Parts,
     content_type: Option<ContentType>,
     accept: Option<Accept>,
 }
-impl<'a> From<&'a Request<Body>> for RichRequest<'a> {
-    fn from(req: &'a Request<Body>) -> RichRequest<'a> {
-        RichRequest {
-            req,
+impl From<Parts> for RichParts {
+    fn from(parts: Parts) -> RichParts {
+        RichParts {
+            parts,
             content_type: None,
             accept: None,
         }
     }
 }
-impl<'a> RichRequest<'a> {
-    fn get_content_type(&'a mut self) -> &'a ContentType {
+impl RichParts {
+    fn get_content_type(&mut self) -> &ContentType {
         let value_exists = self.content_type.is_some();
         if !value_exists {
             let new_content_type = self
-                .req
-                .headers()
+                .parts
+                .headers
                 .get(CONTENT_TYPE)
                 .iter()
                 .next()

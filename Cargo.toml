@@ -13,6 +13,7 @@ serde_json = "1.0.x"
 json5 = "0.2.5"
 tokio = { version = "0.2", features = ["full"] }
 warp = "0.2"
+http = "0.2"
 hyper = "0.13"
 chashmap = "2.2.x"
 
