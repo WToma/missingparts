@@ -267,6 +267,15 @@ struct MimeType {
     mime_subtype: String,
 }
 impl MimeType {
+    fn is_compatible_with(&self, other: &MimeType) -> bool {
+        Self::is_compatible_part(&self.mime_type, &other.mime_type)
+            && Self::is_compatible_part(&self.mime_subtype, &other.mime_subtype)
+    }
+
+    fn is_compatible_part(part1: &str, part2: &str) -> bool {
+        part1 == "*" || part2 == "*" || part1 == part2
+    }
+
     fn json() -> MimeType {
         MimeType::from("application/json")
     }
@@ -301,6 +310,15 @@ impl SupportedMimeType {
         match m {
             t if t == &MimeType::json() => Ok(Json),
             t if t == &MimeType::json5() => Ok(Json5),
+            unsupported => Err(unsupported),
+        }
+    }
+
+    fn from_mime_type_relaxed(m: &MimeType) -> Result<SupportedMimeType, &MimeType> {
+        use SupportedMimeType::*;
+        match m {
+            t if t.is_compatible_with(&MimeType::json()) => Ok(Json),
+            t if t.is_compatible_with(&MimeType::json5()) => Ok(Json5),
             unsupported => Err(unsupported),
         }
     }
@@ -389,7 +407,7 @@ impl RichParts {
             .mime_types
             .iter()
             .filter_map(|explicit_accept_type| {
-                SupportedMimeType::from_mime_type(explicit_accept_type).ok()
+                SupportedMimeType::from_mime_type_relaxed(explicit_accept_type).ok()
             })
             .next();
         // if the caller specified a supported accepy type, use that
