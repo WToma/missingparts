@@ -219,21 +219,16 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
     max_content_length: usize,
 ) -> Result<T, BodyParseError> {
     use BodyParseError::*;
-    let content_type = parts
-        .parts
-        .headers
-        .get(CONTENT_TYPE)
-        .iter()
-        .next()
-        .and_then(|h| h.to_str().ok())
-        .map(|h| ContentType::from(h))
-        .unwrap_or_else(|| ContentType::from(MimeType::json()));
+    let content_type = parts.get_content_type();
 
-    match content_type.charset_name.filter(|c| c != "utf8") {
-        Some(unsupported_charset) => return Err(UnsupportedCharset(unsupported_charset)),
+    match &content_type.charset_name.as_ref().filter(|c| c != &"utf8") {
+        Some(unsupported_charset) => {
+            return Err(UnsupportedCharset(unsupported_charset.to_string()))
+        }
         None => (),
     };
-    let content_type = &content_type.content_type;
+    let content_type = SupportedMimeType::from_mime_type(&content_type.content_type)
+        .map_err(|unsupported_mime_type| UnsupportedContentType(unsupported_mime_type.clone()))?;
 
     let content_length: usize = parts
         .parts
@@ -252,16 +247,7 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
     let full_body = hyper::body::to_bytes(body).await?;
     let full_body_str = str::from_utf8(&full_body)?;
 
-    // TODO: check for content type before reading the body
-    if content_type == &MimeType::json() {
-        let body = serde_json::de::from_str(full_body_str)?;
-        Ok(body)
-    } else if content_type == &MimeType::json5() {
-        let body = json5::from_str(full_body_str)?;
-        Ok(body)
-    } else {
-        Err(UnsupportedContentType(content_type.clone()))
-    }
+    content_type.deserialize(full_body_str)
 }
 
 fn serialize_by_accept<T: Serialize>(
