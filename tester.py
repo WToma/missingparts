@@ -6,6 +6,7 @@ from typing import Optional
 import jsonschema
 import json
 import copy
+import logging
 
 
 class SchemaValidatorHelper:
@@ -231,8 +232,25 @@ def join_2_players_scavenge_trade(backend: Backend):
 if __name__ == '__main__':
     server = sys.argv[1]
     schema_file = sys.argv[2]
+    request_debug_logging = ''
+    if len(sys.argv) > 3:
+        request_debug_logging = sys.argv[3]
     print("running against server", server)
     print("validating against schema", schema_file)
     schema = SchemaValidatorHelper(schema_file)
     backend = Backend(server, schema)
+
+    if request_debug_logging == 'request_debug':
+        try:
+            import http.client as http_client
+        except ImportError:
+            # Python 2
+            import httplib as http_client
+        http_client.HTTPConnection.debuglevel = 1
+        logging.basicConfig()
+        logging.getLogger().setLevel(logging.DEBUG)
+        requests_log = logging.getLogger("requests.packages.urllib3")
+        requests_log.setLevel(logging.DEBUG)
+        requests_log.propagate = True
+
     join_2_players_scavenge_trade(backend)
