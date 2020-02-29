@@ -21,12 +21,19 @@ async fn missingparts_service(
 ) -> Result<Response<Body>, Infallible> {
     if req.method() == &Method::POST && req.uri().path() == "/lobby" {
         let (parts, body) = req.into_parts();
-        let rich_parts = RichParts::from(parts);
+        let rich_parts = RichParts::from(&parts);
         let body: Result<JoinLobbyRequest, BodyParseError> =
             deserialize_by_content_type(&rich_parts, body, 1024).await;
+        let response_mime_type = if let Some(mime_type) = rich_parts.guess_response_type() {
+            mime_type
+        } else {
+            return Ok(Response::builder()
+                                .status(StatusCode::NOT_ACCEPTABLE)
+                                .body(Body::from("no compatible Accept value found. supported application/json and application/json5"))
+                                .unwrap());
+        };
         match body {
             Ok(body) => {
-                let accept = Accept::from(rich_parts.parts.headers.get_all(ACCEPT));
                 let add_player_result = lobby.add_player(body.min_game_size, body.max_game_size);
                 match add_player_result {
                     Ok((player_id_in_lobby, token)) => {
@@ -34,38 +41,20 @@ async fn missingparts_service(
                             player_id_in_lobby: player_id_in_lobby.0,
                             token: token.0,
                         };
-                        // TODO: 1. check for valid content type before processing the request
-                        //       2. use the content type as a fallback
-                        let response_body = serialize_by_accept(&accept, None, &resp);
-                        match response_body {
-                            Ok(body) => Ok(Response::builder()
-                                .status(StatusCode::CREATED)
-                                .body(body)
-                                .unwrap()),
-                            Err(body) => Ok(Response::builder()
-                                .status(StatusCode::NOT_ACCEPTABLE)
-                                .body(body)
-                                .unwrap()),
-                        }
+                        Ok(Response::builder()
+                            .status(StatusCode::CREATED)
+                            .body(response_mime_type.serialize(&resp))
+                            .unwrap())
                     }
                     Err(()) => {
                         let resp = InvalidGameSizePreference {
                             min_game_size: body.min_game_size,
                             max_game_size: body.max_game_size,
                         };
-                        // TODO: 1. check for valid content type before processing the request
-                        //       2. use the content type as a fallback
-                        let response_body = serialize_by_accept(&accept, None, &resp);
-                        match response_body {
-                            Ok(body) => Ok(Response::builder()
-                                .status(StatusCode::CREATED)
-                                .body(body)
-                                .unwrap()),
-                            Err(body) => Ok(Response::builder()
-                                .status(StatusCode::NOT_ACCEPTABLE)
-                                .body(body)
-                                .unwrap()),
-                        }
+                        Ok(Response::builder()
+                            .status(StatusCode::CREATED)
+                            .body(response_mime_type.serialize(&resp))
+                            .unwrap())
                     }
                 }
             }
@@ -242,34 +231,6 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
     content_type.deserialize(full_body_str)
 }
 
-fn serialize_by_accept<T: Serialize>(
-    accept: &Accept,
-    content_type: Option<&MimeType>,
-    body: &T,
-) -> Result<Body, Body> {
-    let response_mime_type = if accept.has_compatible(&MimeType::json()) {
-        Some(MimeType::json())
-    } else if accept.has_compatible(&MimeType::json5()) {
-        Some(MimeType::json5())
-    } else if accept.is_empty() {
-        Some(MimeType::json())
-    } else {
-        match content_type {
-            Some(t) if t == &MimeType::json() || t == &MimeType::json5() => Some(t.clone()),
-            _ => None,
-        }
-    };
-    match response_mime_type {
-        Some(t) if t == MimeType::json() => {
-            Ok(Body::from(serde_json::ser::to_string(body).unwrap()))
-        }
-        Some(t) if t == MimeType::json5() => Ok(Body::from(json5::to_string(body).unwrap())),
-        _ => Err(Body::from(
-            "no compatible Accept value found. supported application/json and application/json5",
-        )),
-    }
-}
-
 /// Simple helpers to parse a content type string that may also contain a charset
 struct ContentType {
     content_type: MimeType,
@@ -306,13 +267,6 @@ struct MimeType {
     mime_subtype: String,
 }
 impl MimeType {
-    fn is_compatible_with(&self, other: &MimeType) -> bool {
-        Self::is_compatible_part(&self.mime_type, &other.mime_type)
-            && Self::is_compatible_part(&self.mime_subtype, &other.mime_subtype)
-    }
-    fn is_compatible_part(part1: &str, part2: &str) -> bool {
-        part1 == "*" || part2 == "*" || part1 == part2
-    }
     fn json() -> MimeType {
         MimeType::from("application/json")
     }
@@ -373,13 +327,6 @@ struct Accept {
     mime_types: Vec<MimeType>,
 }
 impl Accept {
-    fn has_compatible(&self, mime_type: &MimeType) -> bool {
-        self.mime_types
-            .iter()
-            .filter(|m| mime_type.is_compatible_with(m))
-            .next()
-            .is_some()
-    }
     fn is_empty(&self) -> bool {
         self.mime_types.is_empty()
     }
@@ -411,18 +358,16 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
     }
 }
 struct RichParts {
-    parts: Parts,
     content_type: ContentType,
     content_length: Option<usize>,
     accept: Accept,
 }
-impl From<Parts> for RichParts {
-    fn from(parts: Parts) -> RichParts {
-        let content_type = Self::parse_content_type(&parts);
-        let content_length = Self::parse_content_length(&parts);
-        let accept = Self::parse_accept(&parts);
+impl From<&Parts> for RichParts {
+    fn from(parts: &Parts) -> RichParts {
+        let content_type = Self::parse_content_type(parts);
+        let content_length = Self::parse_content_length(parts);
+        let accept = Self::parse_accept(parts);
         RichParts {
-            parts,
             content_type: content_type,
             content_length,
             accept,
@@ -438,8 +383,29 @@ impl RichParts {
         &self.content_length
     }
 
-    fn get_accept(&self) -> &Accept {
-        &self.accept
+    fn guess_response_type(&self) -> Option<SupportedMimeType> {
+        let explicit_accept_type = self
+            .accept
+            .mime_types
+            .iter()
+            .filter_map(|explicit_accept_type| {
+                SupportedMimeType::from_mime_type(explicit_accept_type).ok()
+            })
+            .next();
+        // if the caller specified a supported accepy type, use that
+        explicit_accept_type.or_else(|| {
+            if !self.accept.is_empty() {
+                // if the caller specified accept types, and none of them were supported, then do not attempt to
+                // guess the response type
+                None
+            } else {
+                // if the Content-Type was specified and supported, use that. Otherwise, fall back to the default.
+                // `content_type` already does the default handling, so we don't have to repeat that here
+                // (if the content type was specified and unsupported, we will likely not use the result of this
+                // funciton anyway).
+                SupportedMimeType::from_mime_type(&self.content_type.content_type).ok()
+            }
+        })
     }
 
     fn parse_content_type(parts: &Parts) -> ContentType {
