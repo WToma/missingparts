@@ -21,9 +21,9 @@ async fn missingparts_service(
 ) -> Result<Response<Body>, Infallible> {
     if req.method() == &Method::POST && req.uri().path() == "/lobby" {
         let (parts, body) = req.into_parts();
-        let mut rich_parts = RichParts::from(parts);
+        let rich_parts = RichParts::from(parts);
         let body: Result<JoinLobbyRequest, BodyParseError> =
-            deserialize_by_content_type(&mut rich_parts, body, 1024).await;
+            deserialize_by_content_type(&rich_parts, body, 1024).await;
         match body {
             Ok(body) => {
                 let accept = Accept::from(rich_parts.parts.headers.get_all(ACCEPT));
@@ -214,7 +214,7 @@ impl Into<Response<Body>> for BodyParseError {
 }
 
 async fn deserialize_by_content_type<T: de::DeserializeOwned>(
-    parts: &mut RichParts,
+    parts: &RichParts,
     body: Body,
     max_content_length: usize,
 ) -> Result<T, BodyParseError> {
@@ -420,33 +420,32 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
 }
 struct RichParts {
     parts: Parts,
-    content_type: Option<ContentType>,
+    content_type: ContentType,
     accept: Option<Accept>,
 }
 impl From<Parts> for RichParts {
     fn from(parts: Parts) -> RichParts {
+        let content_type = Self::parse_content_type(&parts);
         RichParts {
             parts,
-            content_type: None,
+            content_type: content_type,
             accept: None,
         }
     }
 }
 impl RichParts {
-    fn get_content_type(&mut self) -> &ContentType {
-        let value_exists = self.content_type.is_some();
-        if !value_exists {
-            let new_content_type = self
-                .parts
-                .headers
-                .get(CONTENT_TYPE)
-                .iter()
-                .next()
-                .and_then(|h| h.to_str().ok())
-                .map(|h| ContentType::from(h))
-                .unwrap_or_else(|| ContentType::from(MimeType::json()));
-            self.content_type = Some(new_content_type);
-        }
-        self.content_type.as_ref().unwrap()
+    fn get_content_type(&self) -> &ContentType {
+        &self.content_type
+    }
+
+    fn parse_content_type(parts: &Parts) -> ContentType {
+        parts
+            .headers
+            .get(CONTENT_TYPE)
+            .iter()
+            .next()
+            .and_then(|h| h.to_str().ok())
+            .map(|h| ContentType::from(h))
+            .unwrap_or_else(|| ContentType::from(MimeType::json()))
     }
 }
