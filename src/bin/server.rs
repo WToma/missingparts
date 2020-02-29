@@ -32,6 +32,7 @@ async fn missingparts_service(
                             token: token.0,
                         };
                         // TODO: 1. check for valid content type before processing the request
+                        //       2. use the content type as a fallback
                         let response_body = serialize_by_accept(&accept, None, &resp);
                         match response_body {
                             Ok(body) => Ok(Response::builder()
@@ -50,6 +51,7 @@ async fn missingparts_service(
                             max_game_size: body.max_game_size,
                         };
                         // TODO: 1. check for valid content type before processing the request
+                        //       2. use the content type as a fallback
                         let response_body = serialize_by_accept(&accept, None, &resp);
                         match response_body {
                             Ok(body) => Ok(Response::builder()
@@ -352,6 +354,37 @@ impl fmt::Display for MimeType {
     }
 }
 
+enum SupportedMimeType {
+    Json,
+    Json5,
+}
+impl SupportedMimeType {
+    fn from_mime_type(m: &MimeType) -> Result<SupportedMimeType, &MimeType> {
+        use SupportedMimeType::*;
+        match m {
+            t if t == &MimeType::json() => Ok(Json),
+            t if t == &MimeType::json5() => Ok(Json5),
+            unsupported => Err(unsupported),
+        }
+    }
+
+    fn serialize<T: Serialize>(&self, x: &T) -> Body {
+        use SupportedMimeType::*;
+        match self {
+            Json => Body::from(serde_json::ser::to_string(x).unwrap()),
+            Json5 => Body::from(json5::to_string(x).unwrap()),
+        }
+    }
+
+    fn deserialize<T: de::DeserializeOwned>(&self, s: &str) -> Result<T, BodyParseError> {
+        use SupportedMimeType::*;
+        match self {
+            Json => Ok(serde_json::de::from_str(s)?),
+            Json5 => Ok(json5::from_str(s)?),
+        }
+    }
+}
+
 /// Helper to work with the Accept http headers
 struct Accept {
     mime_types: Vec<MimeType>,
@@ -392,5 +425,37 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
         Accept {
             mime_types: all_mime_types,
         }
+    }
+}
+struct RichRequest<'a> {
+    req: &'a Request<Body>,
+    content_type: Option<ContentType>,
+    accept: Option<Accept>,
+}
+impl<'a> From<&'a Request<Body>> for RichRequest<'a> {
+    fn from(req: &'a Request<Body>) -> RichRequest<'a> {
+        RichRequest {
+            req,
+            content_type: None,
+            accept: None,
+        }
+    }
+}
+impl<'a> RichRequest<'a> {
+    fn get_content_type(&'a mut self) -> &'a ContentType {
+        let value_exists = self.content_type.is_some();
+        if !value_exists {
+            let new_content_type = self
+                .req
+                .headers()
+                .get(CONTENT_TYPE)
+                .iter()
+                .next()
+                .and_then(|h| h.to_str().ok())
+                .map(|h| ContentType::from(h))
+                .unwrap_or_else(|| ContentType::from(MimeType::json()));
+            self.content_type = Some(new_content_type);
+        }
+        self.content_type.as_ref().unwrap()
     }
 }
