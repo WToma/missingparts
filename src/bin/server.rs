@@ -230,15 +230,7 @@ async fn deserialize_by_content_type<T: de::DeserializeOwned>(
     let content_type = SupportedMimeType::from_mime_type(&content_type.content_type)
         .map_err(|unsupported_mime_type| UnsupportedContentType(unsupported_mime_type.clone()))?;
 
-    let content_length: usize = parts
-        .parts
-        .headers
-        .get(CONTENT_LENGTH)
-        .iter()
-        .next()
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.parse().ok())
-        .ok_or(ContentLengthMissing)?;
+    let content_length: usize = parts.get_content_length().ok_or(ContentLengthMissing)?;
 
     if content_length > max_content_length {
         return Err(RequestTooLarge(content_length, max_content_length));
@@ -421,21 +413,33 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
 struct RichParts {
     parts: Parts,
     content_type: ContentType,
-    accept: Option<Accept>,
+    content_length: Option<usize>,
+    accept: Accept,
 }
 impl From<Parts> for RichParts {
     fn from(parts: Parts) -> RichParts {
         let content_type = Self::parse_content_type(&parts);
+        let content_length = Self::parse_content_length(&parts);
+        let accept = Self::parse_accept(&parts);
         RichParts {
             parts,
             content_type: content_type,
-            accept: None,
+            content_length,
+            accept,
         }
     }
 }
 impl RichParts {
     fn get_content_type(&self) -> &ContentType {
         &self.content_type
+    }
+
+    fn get_content_length(&self) -> &Option<usize> {
+        &self.content_length
+    }
+
+    fn get_accept(&self) -> &Accept {
+        &self.accept
     }
 
     fn parse_content_type(parts: &Parts) -> ContentType {
@@ -447,5 +451,19 @@ impl RichParts {
             .and_then(|h| h.to_str().ok())
             .map(|h| ContentType::from(h))
             .unwrap_or_else(|| ContentType::from(MimeType::json()))
+    }
+
+    fn parse_content_length(parts: &Parts) -> Option<usize> {
+        parts
+            .headers
+            .get(CONTENT_LENGTH)
+            .iter()
+            .next()
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.parse().ok())
+    }
+
+    fn parse_accept(parts: &Parts) -> Accept {
+        Accept::from(parts.headers.get_all(ACCEPT))
     }
 }
