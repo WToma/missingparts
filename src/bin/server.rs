@@ -23,7 +23,7 @@ async fn missingparts_service(
         let (parts, body) = req.into_parts();
         let rich_parts = RichParts::from(&parts);
         let body: Result<JoinLobbyRequest, BodyParseError> =
-            deserialize_by_content_type(&rich_parts, body, 1024).await;
+            rich_parts.deserialize_by_content_type(body, 1024).await;
         let response_mime_type = if let Some(mime_type) = rich_parts.guess_response_type() {
             mime_type
         } else {
@@ -200,35 +200,6 @@ impl Into<Response<Body>> for BodyParseError {
             .body(Body::from(message))
             .unwrap()
     }
-}
-
-async fn deserialize_by_content_type<T: de::DeserializeOwned>(
-    parts: &RichParts,
-    body: Body,
-    max_content_length: usize,
-) -> Result<T, BodyParseError> {
-    use BodyParseError::*;
-    let content_type = parts.get_content_type();
-
-    match &content_type.charset_name.as_ref().filter(|c| c != &"utf8") {
-        Some(unsupported_charset) => {
-            return Err(UnsupportedCharset(unsupported_charset.to_string()))
-        }
-        None => (),
-    };
-    let content_type = SupportedMimeType::from_mime_type(&content_type.content_type)
-        .map_err(|unsupported_mime_type| UnsupportedContentType(unsupported_mime_type.clone()))?;
-
-    let content_length: usize = parts.get_content_length().ok_or(ContentLengthMissing)?;
-
-    if content_length > max_content_length {
-        return Err(RequestTooLarge(content_length, max_content_length));
-    }
-
-    let full_body = hyper::body::to_bytes(body).await?;
-    let full_body_str = str::from_utf8(&full_body)?;
-
-    content_type.deserialize(full_body_str)
 }
 
 /// Simple helpers to parse a content type string that may also contain a charset
@@ -425,6 +396,44 @@ impl RichParts {
             }
         })
     }
+
+    async fn deserialize_by_content_type<T: de::DeserializeOwned>(
+        &self,
+        body: Body,
+        max_content_length: usize,
+    ) -> Result<T, BodyParseError> {
+        use BodyParseError::*;
+        let content_type = self.get_content_type();
+
+        // it is allowed for the Content-Type charset to be left unspecified. in that case we assume utf8. Values
+        // other than utf8 are not allowed.
+        match &content_type.charset_name.as_ref().filter(|c| c != &"utf8") {
+            Some(unsupported_charset) => {
+                return Err(UnsupportedCharset(unsupported_charset.to_string()))
+            }
+            None => (),
+        };
+
+        // check that the Content-Type is supported. (assuming application/json if unspecified)
+        let content_type = SupportedMimeType::from_mime_type(&content_type.content_type).map_err(
+            |unsupported_mime_type| UnsupportedContentType(unsupported_mime_type.clone()),
+        )?;
+
+        // check that the Content-Length is defined (mandatory) and that it does not exceed the max size the
+        // handler is willing to process (this is to prevent DoS-type attacks. hyper will limit the body input stream
+        // to Content-Length bytes).
+        let content_length: usize = self.get_content_length().ok_or(ContentLengthMissing)?;
+        if content_length > max_content_length {
+            return Err(RequestTooLarge(content_length, max_content_length));
+        }
+
+        // read & deserialize the body
+        let full_body = hyper::body::to_bytes(body).await?;
+        let full_body_str = str::from_utf8(&full_body)?;
+        content_type.deserialize(full_body_str)
+    }
+
+    // header parsing helpers
 
     fn parse_content_type(parts: &Parts) -> ContentType {
         parts
