@@ -19,19 +19,20 @@ async fn missingparts_service(
     lobby: Arc<Lobby>,
     req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
-    if req.method() == &Method::POST && req.uri().path() == "/lobby" {
-        let (parts, body) = req.into_parts();
-        let rich_parts = RichParts::from(&parts);
-        let body: Result<JoinLobbyRequest, BodyParseError> =
-            rich_parts.deserialize_by_content_type(body, 1024).await;
-        let response_mime_type = if let Some(mime_type) = rich_parts.guess_response_type() {
-            mime_type
-        } else {
-            return Ok(Response::builder()
+    let (parts, body) = req.into_parts();
+    let rich_parts = RichParts::from(&parts);
+    let response_mime_type = if let Some(mime_type) = rich_parts.guess_response_type() {
+        mime_type
+    } else {
+        return Ok(Response::builder()
                                 .status(StatusCode::NOT_ACCEPTABLE)
                                 .body(Body::from("no compatible Accept value found. supported application/json and application/json5"))
                                 .unwrap());
-        };
+    };
+
+    if rich_parts.does_match(&Method::POST, "/lobby") {
+        let body: Result<JoinLobbyRequest, BodyParseError> =
+            rich_parts.deserialize_by_content_type(body, 1024).await;
         match body {
             Ok(body) => {
                 let add_player_result = lobby.add_player(body.min_game_size, body.max_game_size);
@@ -347,16 +348,22 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
     }
 }
 struct RichParts {
+    method: http::Method,
+    uri_path: String,
     content_type: ContentType,
     content_length: Option<usize>,
     accept: Accept,
 }
 impl From<&Parts> for RichParts {
     fn from(parts: &Parts) -> RichParts {
+        let method = parts.method.clone();
+        let uri_path = parts.uri.path().to_string();
         let content_type = Self::parse_content_type(parts);
         let content_length = Self::parse_content_length(parts);
         let accept = Self::parse_accept(parts);
         RichParts {
+            method,
+            uri_path,
             content_type: content_type,
             content_length,
             accept,
@@ -431,6 +438,10 @@ impl RichParts {
         let full_body = hyper::body::to_bytes(body).await?;
         let full_body_str = str::from_utf8(&full_body)?;
         content_type.deserialize(full_body_str)
+    }
+
+    fn does_match(&self, method: &http::Method, path: &str) -> bool {
+        &self.method == method && self.uri_path == path
     }
 
     // header parsing helpers
