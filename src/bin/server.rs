@@ -41,7 +41,11 @@ async fn missingparts_service(
         rich_parts.try_match(&Method::GET, "/lobby/players/{}/game")
     {
         let player_id_in_lobby = PlayerIdInLobby(player_id_in_lobby);
-        unimplemented!()
+        Ok(process_get_lobby_player(
+            player_id_in_lobby,
+            &response_mime_type,
+            lobby,
+        ))
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
