@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::convert::{Infallible, TryFrom};
 use std::fmt;
 use std::str;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ use json5;
 use serde::{de, Deserialize, Serialize};
 use serde_json;
 
-use missingparts::lobby::Lobby;
+use missingparts::lobby::{Lobby, PlayerIdInLobby};
 
 async fn missingparts_service(
     lobby: Arc<Lobby>,
@@ -37,6 +37,11 @@ async fn missingparts_service(
             Ok(body) => Ok(process_join_lobby(body, &response_mime_type, lobby)),
             Err(e) => Ok(e.into()),
         }
+    } else if let Ok(TupleWrapper1(player_id_in_lobby)) =
+        rich_parts.try_match(&Method::GET, "/lobby/players/{}/game")
+    {
+        let player_id_in_lobby = PlayerIdInLobby(player_id_in_lobby);
+        unimplemented!()
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -69,6 +74,33 @@ fn process_join_lobby(
             };
             Response::builder()
                 .status(StatusCode::CREATED)
+                .body(response_mime_type.serialize(&resp))
+                .unwrap()
+        }
+    }
+}
+
+fn process_get_lobby_player(
+    player_id_in_lobby: PlayerIdInLobby,
+    response_mime_type: &SupportedMimeType,
+    lobby: Arc<Lobby>,
+) -> Response<Body> {
+    // TODO: enforce token
+    match lobby.get_player_game(player_id_in_lobby) {
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap(),
+        Some(player_assigned_to_game) => {
+            let resp = JoinedGameResponse {
+                game_id: player_assigned_to_game.game_id.0,
+                player_id_in_game: player_assigned_to_game.player_id_in_game,
+                token: None, // token remains the same
+            };
+
+            Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                // TODO add Location header
                 .body(response_mime_type.serialize(&resp))
                 .unwrap()
         }
@@ -120,6 +152,15 @@ struct JoinedLobbyResponse {
 struct InvalidGameSizePreference {
     min_game_size: usize,
     max_game_size: usize,
+}
+
+#[derive(Serialize)]
+struct JoinedGameResponse {
+    game_id: usize,
+    player_id_in_game: usize,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<String>,
 }
 
 enum BodyParseError {
@@ -450,6 +491,37 @@ impl RichParts {
         &self.method == method && self.uri_path == path
     }
 
+    fn try_match<'a, 'b, T>(
+        &'a self,
+        method: &http::Method,
+        path_pattern: &'b str,
+    ) -> Result<T, UriMatchError>
+    where
+        T: TryFrom<Vec<&'a str>, Error = TupleWrapperParseError>,
+    {
+        use UriMatchError::*;
+        if &self.method != method {
+            return Err(MethodNotAllowed(method.clone()));
+        }
+
+        let mut path_pattern_parts = path_pattern.split('/');
+        let mut path_parts = self.uri_path[..].split('/');
+        let mut variables: Vec<&'a str> = Vec::new();
+
+        loop {
+            let next_pattern_part = path_pattern_parts.next();
+            let next_path_part = path_parts.next();
+            match (next_pattern_part, next_path_part) {
+                (None, None) => break,
+                (Some("{}"), Some(variable)) => variables.push(variable),
+                (Some(pattern_part), Some(path_part)) if path_part == pattern_part => continue,
+                _ => return Err(PathDoesNotMatch(self.uri_path.clone())),
+            }
+        }
+
+        T::try_from(variables).map_err(|e| PartsParseError(e))
+    }
+
     // header parsing helpers
 
     fn parse_content_type(parts: &Parts) -> ContentType {
@@ -475,5 +547,88 @@ impl RichParts {
 
     fn parse_accept(parts: &Parts) -> Accept {
         Accept::from(parts.headers.get_all(ACCEPT))
+    }
+}
+
+// helpers for parsing URLs
+
+enum UriMatchError {
+    MethodNotAllowed(http::Method),
+    PathDoesNotMatch(String),
+    PartsParseError(TupleWrapperParseError),
+}
+
+enum TupleWrapperParseError {
+    TooManyParams(usize),
+    TooFewParams(usize),
+    FailedToParsePart(usize),
+}
+
+struct TupleWrapper1<T>(T);
+impl<'a, T1> TryFrom<Vec<&'a str>> for TupleWrapper1<T1>
+where
+    T1: str::FromStr,
+{
+    type Error = TupleWrapperParseError;
+
+    fn try_from(s: Vec<&'a str>) -> Result<Self, Self::Error> {
+        use TupleWrapperParseError::*;
+        let l = s.len();
+        match l {
+            1 => {
+                let inner = T1::from_str(s[0]).map_err(|_| FailedToParsePart(0))?;
+                Ok(TupleWrapper1(inner))
+            }
+            too_few if l < 1 => Err(TooFewParams(too_few)),
+            too_many => Err(TooManyParams(too_many)),
+        }
+    }
+}
+
+struct TupleWrapper2<T1, T2>(T1, T2);
+impl<'a, T1, T2> TryFrom<Vec<&'a str>> for TupleWrapper2<T1, T2>
+where
+    T1: str::FromStr,
+    T2: str::FromStr,
+{
+    type Error = TupleWrapperParseError;
+
+    fn try_from(s: Vec<&'a str>) -> Result<Self, Self::Error> {
+        use TupleWrapperParseError::*;
+        let l = s.len();
+        match l {
+            2 => {
+                let inner1 = T1::from_str(s[0]).map_err(|_| FailedToParsePart(0))?;
+                let inner2 = T2::from_str(s[1]).map_err(|_| FailedToParsePart(1))?;
+                Ok(TupleWrapper2(inner1, inner2))
+            }
+            too_few if l < 2 => Err(TooFewParams(too_few)),
+            too_many => Err(TooManyParams(too_many)),
+        }
+    }
+}
+
+struct TupleWrapper3<T1, T2, T3>(T1, T2, T3);
+impl<'a, T1, T2, T3> TryFrom<Vec<&'a str>> for TupleWrapper3<T1, T2, T3>
+where
+    T1: str::FromStr,
+    T2: str::FromStr,
+    T3: str::FromStr,
+{
+    type Error = TupleWrapperParseError;
+
+    fn try_from(s: Vec<&'a str>) -> Result<Self, Self::Error> {
+        use TupleWrapperParseError::*;
+        let l = s.len();
+        match l {
+            3 => {
+                let inner1 = T1::from_str(s[0]).map_err(|_| FailedToParsePart(0))?;
+                let inner2 = T2::from_str(s[1]).map_err(|_| FailedToParsePart(1))?;
+                let inner3 = T3::from_str(s[2]).map_err(|_| FailedToParsePart(2))?;
+                Ok(TupleWrapper3(inner1, inner2, inner3))
+            }
+            too_few if l < 3 => Err(TooFewParams(too_few)),
+            too_many => Err(TooManyParams(too_many)),
+        }
     }
 }
