@@ -36,7 +36,12 @@ async fn missingparts_service(
         let body: Result<JoinLobbyRequest, BodyParseError> =
             rich_parts.deserialize_by_content_type(body, 1024).await;
         match body {
-            Ok(body) => Ok(process_join_lobby(body, &response_mime_type, lobby)),
+            Ok(body) => Ok(process_join_lobby(
+                body,
+                &response_mime_type,
+                lobby,
+                game_manager,
+            )),
             Err(e) => Ok(e.into()),
         }
     } else if let Ok(TupleWrapper1(player_id_in_lobby)) =
@@ -60,18 +65,36 @@ fn process_join_lobby(
     body: JoinLobbyRequest,
     response_mime_type: &SupportedMimeType,
     lobby: Arc<Lobby>,
+    game_manager: Arc<GameManager>,
 ) -> Response<Body> {
     let add_player_result = lobby.add_player(body.min_game_size, body.max_game_size);
     match add_player_result {
         Ok((player_id_in_lobby, token)) => {
-            let resp = JoinedLobbyResponse {
-                player_id_in_lobby: player_id_in_lobby.0,
-                token: token.0,
-            };
-            Response::builder()
-                .status(StatusCode::CREATED)
-                .body(response_mime_type.serialize(&resp))
-                .unwrap()
+            lobby.start_game(&*game_manager);
+            // TODO add Location header to both responses
+            match lobby.get_player_game(player_id_in_lobby) {
+                None => {
+                    let resp = JoinedLobbyResponse {
+                        player_id_in_lobby: player_id_in_lobby.0,
+                        token: token.0,
+                    };
+                    Response::builder()
+                        .status(StatusCode::CREATED)
+                        .body(response_mime_type.serialize(&resp))
+                        .unwrap()
+                }
+                Some(player_assigned_to_game) => {
+                    let resp = JoinedGameResponse {
+                        game_id: player_assigned_to_game.game_id.0,
+                        player_id_in_game: player_assigned_to_game.player_id_in_game,
+                        token: Some(token.0),
+                    };
+                    Response::builder()
+                        .status(StatusCode::CREATED)
+                        .body(response_mime_type.serialize(&resp))
+                        .unwrap()
+                }
+            }
         }
         Err(()) => {
             let resp = InvalidGameSizePreference {
