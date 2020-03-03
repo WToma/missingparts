@@ -13,10 +13,12 @@ use json5;
 use serde::{de, Deserialize, Serialize};
 use serde_json;
 
+use missingparts::game_manager::GameManager;
 use missingparts::lobby::{Lobby, PlayerIdInLobby};
 
 async fn missingparts_service(
     lobby: Arc<Lobby>,
+    game_manager: Arc<GameManager>,
     req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
     let (parts, body) = req.into_parts();
@@ -114,6 +116,7 @@ fn process_get_lobby_player(
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let lobby = Arc::new(Lobby::new());
+    let game_manager = Arc::new(GameManager::new());
 
     // For every connection, we must make a `Service` to handle all
     // incoming HTTP requests on said connection.
@@ -122,9 +125,10 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // `service_fn` is a helper to convert a function that
         // returns a Response into a `Service`.
         let lobby = Arc::clone(&lobby);
+        let game_manager = Arc::clone(&game_manager);
         async move {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                missingparts_service(Arc::clone(&lobby), req)
+                missingparts_service(Arc::clone(&lobby), Arc::clone(&game_manager), req)
             }))
         }
     });

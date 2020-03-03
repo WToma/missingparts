@@ -57,7 +57,7 @@ impl TokenVerifier<usize> for ManagedGame {
 ///
 /// To start a new game under the manager, use `new_game`. After that use `with_game` for read-only
 /// operations on a game, or `with_mut_game` for read-write operations on a game.
-struct GameManager {
+pub struct GameManager {
     games: CHashMap<GameId, ManagedGame>,
     next_game_index: AtomicUsize,
 }
