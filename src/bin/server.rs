@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use http::request::Parts;
 
-use hyper::header::{HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
+use hyper::header::{HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, LOCATION};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error as HyperError, Method, Request, Response, Server, StatusCode};
 
@@ -71,7 +71,6 @@ fn process_join_lobby(
     match add_player_result {
         Ok((player_id_in_lobby, token)) => {
             lobby.start_game(&*game_manager);
-            // TODO add Location header to both responses
             match lobby.get_player_game(player_id_in_lobby) {
                 None => {
                     let resp = JoinedLobbyResponse {
@@ -80,6 +79,10 @@ fn process_join_lobby(
                     };
                     Response::builder()
                         .status(StatusCode::CREATED)
+                        .header(
+                            LOCATION,
+                            format!("/lobby/players/{:?}/game", player_id_in_lobby.0),
+                        )
                         .body(response_mime_type.serialize(&resp))
                         .unwrap()
                 }
@@ -91,6 +94,14 @@ fn process_join_lobby(
                     };
                     Response::builder()
                         .status(StatusCode::CREATED)
+                        .header(
+                            LOCATION,
+                            format!(
+                                "/games/{:?}/players/{:?}/private",
+                                player_assigned_to_game.game_id.0,
+                                player_assigned_to_game.player_id_in_game
+                            ),
+                        )
                         .body(response_mime_type.serialize(&resp))
                         .unwrap()
                 }
@@ -102,7 +113,7 @@ fn process_join_lobby(
                 max_game_size: body.max_game_size,
             };
             Response::builder()
-                .status(StatusCode::CREATED)
+                .status(StatusCode::BAD_REQUEST)
                 .body(response_mime_type.serialize(&resp))
                 .unwrap()
         }
@@ -129,7 +140,14 @@ fn process_get_lobby_player(
 
             Response::builder()
                 .status(StatusCode::TEMPORARY_REDIRECT)
-                // TODO add Location header
+                .header(
+                    LOCATION,
+                    format!(
+                        "/games/{:?}/players/{:?}/private",
+                        player_assigned_to_game.game_id.0,
+                        player_assigned_to_game.player_id_in_game
+                    ),
+                )
                 .body(response_mime_type.serialize(&resp))
                 .unwrap()
         }
