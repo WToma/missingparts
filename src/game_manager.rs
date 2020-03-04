@@ -16,7 +16,7 @@ pub struct ManagedGame {
 }
 
 impl ManagedGame {
-    fn new(tokens: Vec<Token>) -> ManagedGame {
+    pub fn new(tokens: Vec<Token>) -> ManagedGame {
         let num_players = tokens.len();
         let (gameplay, secret_cards_per_player) = Gameplay::init(num_players);
         ManagedGame {
@@ -26,15 +26,15 @@ impl ManagedGame {
         }
     }
 
-    fn describe(&self) -> GameDescription {
+    pub fn describe(&self) -> GameDescription {
         self.gameplay.describe()
     }
 
-    fn get_private_card(&self, player_id: usize) -> Card {
+    pub fn get_private_card(&self, player_id: usize) -> Card {
         self.secret_cards_per_player[player_id]
     }
 
-    fn make_move(
+    pub fn make_move(
         &mut self,
         player_id: usize,
         player_action: PlayerAction,

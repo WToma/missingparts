@@ -14,9 +14,10 @@ use json5;
 use serde::{de, Deserialize, Serialize};
 use serde_json;
 
+use missingparts::cards::Card;
 use missingparts::game_manager::GameManager;
 use missingparts::lobby::{Lobby, PlayerIdInLobby};
-use missingparts::server_core_types::{Token, TokenVerifier};
+use missingparts::server_core_types::{GameId, Token, TokenVerifier};
 
 async fn missingparts_service(
     lobby: Arc<Lobby>,
@@ -67,6 +68,31 @@ async fn missingparts_service(
                 .body(Body::empty())
                 .unwrap())
         }
+    } else if let Ok(TupleWrapper2(game_id, player_id_in_game)) =
+        rich_parts.try_match(&Method::GET, "/games/{}/players/{}/private")
+    {
+        let game_id = GameId(game_id);
+        game_manager.with_game(game_id, |g| {
+            let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
+            let verified = match maybe_token {
+                Some(token) => g.verify(&player_id_in_game, &token),
+                None => false,
+            };
+            if verified {
+                let resp = PrivateCardResponse {
+                    missing_part: g.get_private_card(player_id_in_game),
+                };
+                Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .body(response_mime_type.serialize(&resp))
+                    .unwrap())
+            } else {
+                Ok(Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .body(Body::empty())
+                    .unwrap())
+            }
+        })
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -223,6 +249,11 @@ struct JoinedGameResponse {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PrivateCardResponse {
+    missing_part: Card,
 }
 
 enum BodyParseError {
