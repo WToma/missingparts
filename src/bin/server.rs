@@ -1,11 +1,12 @@
 use std::convert::{Infallible, TryFrom};
 use std::fmt;
 use std::str;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use http::request::Parts;
 
-use hyper::header::{HeaderValue, ACCEPT, CONTENT_LENGTH, CONTENT_TYPE, LOCATION};
+use hyper::header::{HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Error as HyperError, Method, Request, Response, Server, StatusCode};
 
@@ -15,6 +16,7 @@ use serde_json;
 
 use missingparts::game_manager::GameManager;
 use missingparts::lobby::{Lobby, PlayerIdInLobby};
+use missingparts::server_core_types::{Token, TokenVerifier};
 
 async fn missingparts_service(
     lobby: Arc<Lobby>,
@@ -48,11 +50,23 @@ async fn missingparts_service(
         rich_parts.try_match(&Method::GET, "/lobby/players/{}/game")
     {
         let player_id_in_lobby = PlayerIdInLobby(player_id_in_lobby);
-        Ok(process_get_lobby_player(
-            player_id_in_lobby,
-            &response_mime_type,
-            lobby,
-        ))
+        let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
+        let verified = match maybe_token {
+            Some(token) => lobby.verify(&player_id_in_lobby, &token),
+            None => false,
+        };
+        if verified {
+            Ok(process_get_lobby_player(
+                player_id_in_lobby,
+                &response_mime_type,
+                lobby,
+            ))
+        } else {
+            Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::empty())
+                .unwrap())
+        }
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -125,7 +139,6 @@ fn process_get_lobby_player(
     response_mime_type: &SupportedMimeType,
     lobby: Arc<Lobby>,
 ) -> Response<Body> {
-    // TODO: enforce token
     match lobby.get_player_game(player_id_in_lobby) {
         None => Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -449,6 +462,7 @@ struct RichParts {
     content_type: ContentType,
     content_length: Option<usize>,
     accept: Accept,
+    token: Option<String>,
 }
 impl From<&Parts> for RichParts {
     fn from(parts: &Parts) -> RichParts {
@@ -457,12 +471,14 @@ impl From<&Parts> for RichParts {
         let content_type = Self::parse_content_type(parts);
         let content_length = Self::parse_content_length(parts);
         let accept = Self::parse_accept(parts);
+        let token = Self::parse_token(parts);
         RichParts {
             method,
             uri_path,
             content_type: content_type,
             content_length,
             accept,
+            token,
         }
     }
 }
@@ -571,6 +587,10 @@ impl RichParts {
         T::try_from(variables).map_err(|e| PartsParseError(e))
     }
 
+    fn token(&self) -> Option<&str> {
+        self.token.as_ref().map(|s| s.as_str())
+    }
+
     // header parsing helpers
 
     fn parse_content_type(parts: &Parts) -> ContentType {
@@ -596,6 +616,16 @@ impl RichParts {
 
     fn parse_accept(parts: &Parts) -> Accept {
         Accept::from(parts.headers.get_all(ACCEPT))
+    }
+
+    fn parse_token(parts: &Parts) -> Option<String> {
+        parts
+            .headers
+            .get(AUTHORIZATION)
+            .iter()
+            .next()
+            .and_then(|h| h.to_str().ok())
+            .map(|h| h.to_string())
     }
 }
 
