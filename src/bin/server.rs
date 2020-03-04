@@ -128,6 +128,15 @@ async fn missingparts_service(
             }),
             Err(e) => Ok(e.into()),
         }
+    } else if let Ok(TupleWrapper1(game_id)) = rich_parts.try_match(&Method::GET, "/games/{}") {
+        let game_id = GameId(game_id);
+        game_manager.with_game(game_id, |g| {
+            let game_description = g.describe();
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(response_mime_type.serialize(&game_description))
+                .unwrap())
+        })
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
