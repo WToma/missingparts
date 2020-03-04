@@ -17,6 +17,7 @@ use serde_json;
 use missingparts::cards::Card;
 use missingparts::game_manager::GameManager;
 use missingparts::lobby::{Lobby, PlayerIdInLobby};
+use missingparts::playeraction::PlayerAction;
 use missingparts::server_core_types::{GameId, Token, TokenVerifier};
 
 async fn missingparts_service(
@@ -93,6 +94,40 @@ async fn missingparts_service(
                     .unwrap())
             }
         })
+    } else if let Ok(TupleWrapper2(game_id, player_id_in_game)) =
+        rich_parts.try_match(&Method::POST, "/games/{}/players/{}/moves")
+    {
+        let game_id = GameId(game_id);
+        let body: Result<PlayerAction, BodyParseError> =
+            rich_parts.deserialize_by_content_type(body, 1024).await;
+        match body {
+            Ok(player_action) => game_manager.with_mut_game(game_id, |g| {
+                let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
+                let verified = match maybe_token {
+                    Some(token) => g.verify(&player_id_in_game, &token),
+                    None => false,
+                };
+                if verified {
+                    let move_result = g.make_move(player_id_in_game, player_action.clone());
+                    match move_result {
+                        Ok(_) => Ok(Response::builder()
+                            .status(StatusCode::OK)
+                            .body(Body::empty())
+                            .unwrap()),
+                        Err(action_error) => Ok(Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body(response_mime_type.serialize(&action_error))
+                            .unwrap()),
+                    }
+                } else {
+                    Ok(Response::builder()
+                        .status(StatusCode::UNAUTHORIZED)
+                        .body(Body::empty())
+                        .unwrap())
+                }
+            }),
+            Err(e) => Ok(e.into()),
+        }
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
