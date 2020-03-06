@@ -243,18 +243,21 @@ struct JoinLobbyRequest {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 struct JoinedLobbyResponse {
     player_id_in_lobby: usize,
     token: String,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 struct InvalidGameSizePreference {
     min_game_size: usize,
     max_game_size: usize,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 struct JoinedGameResponse {
     game_id: usize,
     player_id_in_game: usize,
@@ -264,6 +267,254 @@ struct JoinedGameResponse {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 struct PrivateCardResponse {
     missing_part: Card,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::de::DeserializeOwned;
+    use serde_json;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn test_join_lobby() {
+        // player 1 joins the lobby
+        let resp = TestServer::new().join_lobby(2, 4);
+
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        assert_header(&resp, "Location", "/lobby/players/0/game");
+
+        // they get an ID and a token
+        let resp: JoinedLobbyResponse = parse_response(resp);
+        assert_eq!(resp.player_id_in_lobby, 0);
+        assert_ne!(resp.token, "");
+    }
+
+    #[test]
+    fn test_join_lobby_invalid_game_size() {
+        // player 1 joins the lobby, but their game size preference is invalid (max=1 < min=2)
+        let resp = TestServer::new().join_lobby(2, 1);
+
+        // they get a 400 Bad Request explaining that the game size preference is invalid
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let resp: InvalidGameSizePreference = parse_response(resp);
+        assert_eq!(resp.min_game_size, 2);
+        assert_eq!(resp.max_game_size, 1);
+    }
+
+    #[test]
+    fn test_lobby_get_game_not_assigned() {
+        let test = TestServer::new();
+
+        // player 1 joins the lobby
+        let resp = test.join_lobby(2, 4);
+
+        // they get an ID and a token
+        let resp: JoinedLobbyResponse = parse_response(resp);
+
+        // they query their game status
+        let resp = test.get_lobby_player_status(&resp);
+
+        // but they don't have a game yet so they get 404 Not Found
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_lobby_get_game() {
+        let test = TestServer::new();
+
+        // player 1 joins the lobby
+        let resp = test.join_lobby(2, 4);
+
+        // they get an ID and a token
+        let resp: JoinedLobbyResponse = parse_response(resp);
+
+        // player 2 joins the lobby
+        test.join_lobby(2, 4);
+
+        // player 1 queries their status
+        let resp = test.get_lobby_player_status(&resp);
+
+        // and now they have a game
+        assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_header(&resp, "Location", "/games/0/players/0/private");
+
+        let resp: JoinedGameResponse = parse_response(resp);
+        assert_eq!(resp.game_id, 0);
+        assert_eq!(resp.player_id_in_game, 0);
+        assert_eq!(resp.token, None); // since the token didn't change, it is empty
+    }
+
+    #[test]
+    fn test_lobby_get_game_invalid_token() {
+        // missing / invalid token, or token belonging to another lobby user
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_lobby_get_game_invalid_playerid() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_join_lobby_to_game() {
+        let test = TestServer::new();
+
+        // player 1 joins the lobby
+        test.join_lobby(2, 4);
+
+        // player 2 joins the lobby
+        let resp = test.join_lobby(2, 4);
+
+        // they immediately get assigned to a game
+        assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_header(&resp, "Location", "/games/0/players/1/private");
+
+        let resp: JoinedGameResponse = parse_response(resp);
+        assert_eq!(resp.game_id, 0);
+        assert_eq!(resp.player_id_in_game, 1);
+
+        // since this is the first response they get from the server, they get a token
+        assert_ne!(resp.token, None);
+        assert_ne!(resp.token.unwrap(), "");
+    }
+
+    #[test]
+    fn test_game_get_private_card() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_game_get_private_card_invalid_cases() {
+        // missing / invalid / belonging to another player token, invalid game id, invalid player id
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_game_describe() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_game_describe_invalid_game_id() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_game_make_move() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_game_make_move_invalid_cases() {
+        // missing / invalid / belonging to another player token, invalid game id, invalid player id
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_invalid_urls() {
+        // not matching any url, or patterns matching but path variables cannot be parsed
+        unimplemented!()
+    }
+
+    // logic test helpers
+    struct TestServer {
+        lobby: Arc<Lobby>,
+        game_manager: Arc<GameManager>,
+    }
+    impl TestServer {
+        fn new() -> TestServer {
+            TestServer {
+                lobby: Arc::new(Lobby::new()),
+                game_manager: Arc::new(GameManager::new()),
+            }
+        }
+
+        fn join_lobby(&self, min_game_size: usize, max_game_size: usize) -> Response<Body> {
+            post(
+                "/lobby",
+                None,
+                format!(
+                    "{{\"min_game_size\": {}, \"max_game_size\": {}}}",
+                    min_game_size, max_game_size
+                ),
+                Arc::clone(&self.lobby),
+                Arc::clone(&self.game_manager),
+            )
+        }
+
+        fn get_lobby_player_status(&self, lobby_player: &JoinedLobbyResponse) -> Response<Body> {
+            get(
+                &format!("/lobby/players/{:?}/game", lobby_player.player_id_in_lobby),
+                Some(&lobby_player.token),
+                Arc::clone(&self.lobby),
+                Arc::clone(&self.game_manager),
+            )
+        }
+    }
+
+    // http test helpers
+
+    fn get(
+        uri: &str,
+        token: Option<&str>,
+        lobby: Arc<Lobby>,
+        game_manager: Arc<GameManager>,
+    ) -> Response<Body> {
+        let req_builder = Request::get(uri);
+        let req_builder = match token {
+            Some(token) => req_builder.header("Authorization", token),
+            None => req_builder,
+        };
+        let req = req_builder.body(Body::empty()).unwrap();
+        Runtime::new()
+            .unwrap()
+            .block_on(missingparts_service(lobby, game_manager, req))
+            .unwrap()
+    }
+
+    fn post(
+        uri: &str,
+        token: Option<&str>,
+        body: String,
+        lobby: Arc<Lobby>,
+        game_manager: Arc<GameManager>,
+    ) -> Response<Body> {
+        let req_builder = Request::post(uri);
+        let req_builder = match token {
+            Some(token) => req_builder.header("Authorization", token),
+            None => req_builder,
+        };
+        let req_builder = req_builder.header("Content-Length", &format!("{:?}", body.len()));
+        let req = req_builder.body(Body::from(body)).unwrap();
+        Runtime::new()
+            .unwrap()
+            .block_on(missingparts_service(lobby, game_manager, req))
+            .unwrap()
+    }
+
+    fn parse_response<T: DeserializeOwned>(r: Response<Body>) -> T {
+        let body = r.into_body();
+        let full_body = Runtime::new()
+            .unwrap()
+            .block_on(hyper::body::to_bytes(body))
+            .unwrap();
+        let full_body_str = str::from_utf8(&full_body).unwrap();
+        serde_json::from_str(full_body_str)
+            .expect(&format!("failed to deserialize `{:?}`", full_body_str))
+    }
+
+    fn assert_header<T>(resp: &Response<T>, header_name: &str, header_value: &str) {
+        let actual_value = resp
+            .headers()
+            .get(header_name)
+            .iter()
+            .next()
+            .and_then(|h| h.to_str().ok())
+            .expect(&format!("missing header `{:?}`", header_name));
+        assert_eq!(actual_value, header_value);
+    }
 }
