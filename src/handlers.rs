@@ -350,13 +350,52 @@ mod tests {
 
     #[test]
     fn test_lobby_get_game_invalid_token() {
-        // missing / invalid token, or token belonging to another lobby user
-        unimplemented!()
+        let test = TestServer::new();
+
+        // player 1 joins the lobby, they get an ID and a token
+        let lobby_player: JoinedLobbyResponse = parse_response(test.join_lobby(4, 4));
+        // player 2 joins the lobby, they get an ID and a token
+        let other_player: JoinedLobbyResponse = parse_response(test.join_lobby(4, 4));
+
+        // try to query status with a missing token
+        let resp = get(
+            &format!("/lobby/players/{:?}/game", lobby_player.player_id_in_lobby),
+            None, // missing token
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to query status with the wrong token
+        let resp = test.get_lobby_player_status(&JoinedLobbyResponse {
+            token: String::from("mellon"),
+            ..lobby_player
+        });
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to query status with a correct token but belonging to the wrong player
+        let resp = test.get_lobby_player_status(&JoinedLobbyResponse {
+            token: other_player.token,
+            ..lobby_player
+        });
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
     fn test_lobby_get_game_invalid_playerid() {
-        unimplemented!()
+        let test = TestServer::new();
+
+        // try to query the status for a player that does not exist
+        let resp = test.get_lobby_player_status(&JoinedLobbyResponse {
+            token: String::from("maybe?"),
+            player_id_in_lobby: 0,
+        });
+
+        // unauthorized because we do not want to reveal whether the player exists or not
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // the server remains in a good state, so after that we can have a player join
+        parse_response::<JoinedLobbyResponse>(test.join_lobby(4, 4));
     }
 
     #[test]
@@ -384,13 +423,74 @@ mod tests {
 
     #[test]
     fn test_game_get_private_card() {
-        unimplemented!()
+        let test = TestServer::new();
+
+        // 2 players join the lobby
+        test.join_lobby(2, 4);
+        let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
+
+        // player 2 queries their private card using the token they got from the lobby
+        let resp = test.get_player_private_card(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            player.token,
+        );
+
+        // it works
+        assert_eq!(resp.status(), StatusCode::OK);
+        parse_response::<PrivateCardResponse>(resp);
     }
 
     #[test]
     fn test_game_get_private_card_invalid_cases() {
         // missing / invalid / belonging to another player token, invalid game id, invalid player id
-        unimplemented!()
+
+        let test = TestServer::new();
+
+        // 2 players join the lobby
+        let other_player: JoinedLobbyResponse = parse_response(test.join_lobby(2, 4));
+        let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
+
+        // try to query the private card of the player with a missing token
+        let resp = test.get_player_private_card(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            None, // missing token
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to query the private card of the player with an invalid token
+        let resp = test.get_player_private_card(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            Some(String::from("mellon")), // invalid token
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to query the private card of the player with an invalid token
+        let resp = test.get_player_private_card(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            Some(other_player.token), // token belongs to another player
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to query the private card of the player with the correct game ID but invalid player ID
+        let resp = test.get_player_private_card(
+            GameId(player.game_id),
+            3, // this player does not exist in that game
+            player.token.clone(),
+        );
+
+        // we get unauthorized because we don't want to expose the existence or non-existence of the game/player combo
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to query the private card of the player with the correct player ID but wrong game ID
+        let resp =
+            test.get_player_private_card(GameId(2), player.player_id_in_game, player.token.clone());
+
+        // we get unauthorized because we don't want to expose the existence or non-existence of the game/player combo
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
@@ -450,6 +550,20 @@ mod tests {
             get(
                 &format!("/lobby/players/{:?}/game", lobby_player.player_id_in_lobby),
                 Some(&lobby_player.token),
+                Arc::clone(&self.lobby),
+                Arc::clone(&self.game_manager),
+            )
+        }
+
+        fn get_player_private_card(
+            &self,
+            game_id: GameId,
+            player_id: usize,
+            token: Option<String>,
+        ) -> Response<Body> {
+            get(
+                &format!("/games/{:?}/players/{:?}/private", game_id.0, player_id),
+                token.as_ref().map(|s| s.as_str()),
                 Arc::clone(&self.lobby),
                 Arc::clone(&self.game_manager),
             )
