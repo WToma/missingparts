@@ -72,27 +72,34 @@ pub async fn missingparts_service(
         rich_parts.try_match(&Method::GET, "/games/{}/players/{}/private")
     {
         let game_id = GameId(game_id);
-        game_manager.with_game(game_id, |g| {
-            let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
-            let verified = match maybe_token {
-                Some(token) => g.verify(&player_id_in_game, &token),
-                None => false,
-            };
-            if verified {
-                let resp = PrivateCardResponse {
-                    missing_part: g.get_private_card(player_id_in_game),
+        game_manager
+            .with_game(game_id, |g| {
+                let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
+                let verified = match maybe_token {
+                    Some(token) => g.verify(&player_id_in_game, &token),
+                    None => false,
                 };
+                if verified {
+                    let resp = PrivateCardResponse {
+                        missing_part: g.get_private_card(player_id_in_game),
+                    };
+                    Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .body(response_mime_type.serialize(&resp))
+                        .unwrap())
+                } else {
+                    Ok(Response::builder()
+                        .status(StatusCode::UNAUTHORIZED)
+                        .body(Body::empty())
+                        .unwrap())
+                }
+            })
+            .unwrap_or_else(|| {
                 Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .body(response_mime_type.serialize(&resp))
-                    .unwrap())
-            } else {
-                Ok(Response::builder()
-                    .status(StatusCode::UNAUTHORIZED)
+                    .status(StatusCode::NOT_FOUND)
                     .body(Body::empty())
                     .unwrap())
-            }
-        })
+            })
     } else if let Ok(TupleWrapper2(game_id, player_id_in_game)) =
         rich_parts.try_match(&Method::POST, "/games/{}/players/{}/moves")
     {
@@ -100,42 +107,56 @@ pub async fn missingparts_service(
         let body: Result<PlayerAction, BodyParseError> =
             rich_parts.deserialize_by_content_type(body, 1024).await;
         match body {
-            Ok(player_action) => game_manager.with_mut_game(game_id, |g| {
-                let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
-                let verified = match maybe_token {
-                    Some(token) => g.verify(&player_id_in_game, &token),
-                    None => false,
-                };
-                if verified {
-                    let move_result = g.make_move(player_id_in_game, player_action.clone());
-                    match move_result {
-                        Ok(_) => Ok(Response::builder()
-                            .status(StatusCode::OK)
+            Ok(player_action) => game_manager
+                .with_mut_game(game_id, |g| {
+                    let maybe_token = rich_parts.token().and_then(|t| Token::from_str(t).ok());
+                    let verified = match maybe_token {
+                        Some(token) => g.verify(&player_id_in_game, &token),
+                        None => false,
+                    };
+                    if verified {
+                        let move_result = g.make_move(player_id_in_game, player_action.clone());
+                        match move_result {
+                            Ok(_) => Ok(Response::builder()
+                                .status(StatusCode::OK)
+                                .body(Body::empty())
+                                .unwrap()),
+                            Err(action_error) => Ok(Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body(response_mime_type.serialize(&action_error))
+                                .unwrap()),
+                        }
+                    } else {
+                        Ok(Response::builder()
+                            .status(StatusCode::UNAUTHORIZED)
                             .body(Body::empty())
-                            .unwrap()),
-                        Err(action_error) => Ok(Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(response_mime_type.serialize(&action_error))
-                            .unwrap()),
+                            .unwrap())
                     }
-                } else {
+                })
+                .unwrap_or_else(|| {
                     Ok(Response::builder()
-                        .status(StatusCode::UNAUTHORIZED)
+                        .status(StatusCode::NOT_FOUND)
                         .body(Body::empty())
                         .unwrap())
-                }
-            }),
+                }),
             Err(e) => Ok(e.into()),
         }
     } else if let Ok(TupleWrapper1(game_id)) = rich_parts.try_match(&Method::GET, "/games/{}") {
         let game_id = GameId(game_id);
-        game_manager.with_game(game_id, |g| {
-            let game_description = g.describe();
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(response_mime_type.serialize(&game_description))
-                .unwrap())
-        })
+        game_manager
+            .with_game(game_id, |g| {
+                let game_description = g.describe();
+                Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .body(response_mime_type.serialize(&game_description))
+                    .unwrap())
+            })
+            .unwrap_or_else(|| {
+                Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body(Body::empty())
+                    .unwrap())
+            })
     } else {
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -492,7 +513,7 @@ mod tests {
             test.get_player_private_card(GameId(2), player.player_id_in_game, player.token.clone());
 
         // we get unauthorized because we don't want to expose the existence or non-existence of the game/player combo
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
@@ -597,7 +618,7 @@ mod tests {
         // try to make a move for the player with the correct player ID but wrong game ID
         let resp =
             test.make_scavenge_move(GameId(2), player.player_id_in_game, player.token.clone());
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]

@@ -82,17 +82,19 @@ impl GameManager {
         }
     }
 
-    pub fn with_game<F, T>(&self, game_id: GameId, f: F) -> T
+    pub fn with_game<F, T>(&self, game_id: GameId, f: F) -> Option<T>
     where
         F: Fn(&ManagedGame) -> T,
     {
-        f(&self.games.get(&game_id).unwrap())
+        let game = self.games.get(&game_id);
+        game.map(|g| f(&g))
     }
 
-    pub fn with_mut_game<F, T>(&self, game_id: GameId, f: F) -> T
+    pub fn with_mut_game<F, T>(&self, game_id: GameId, f: F) -> Option<T>
     where
         F: Fn(&mut ManagedGame) -> T,
     {
-        f(&mut self.games.get_mut(&game_id).unwrap())
+        let game = self.games.get_mut(&game_id);
+        game.map(|mut g| f(&mut g))
     }
 }
