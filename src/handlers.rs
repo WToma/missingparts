@@ -504,16 +504,12 @@ mod tests {
             3, // this player does not exist in that game
             player.token.clone(),
         );
-
-        // we get unauthorized because we don't want to expose the existence or non-existence of the game/player combo
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_is_4xx(&resp);
 
         // try to query the private card of the player with the correct player ID but wrong game ID
         let resp =
             test.get_player_private_card(GameId(2), player.player_id_in_game, player.token.clone());
-
-        // we get unauthorized because we don't want to expose the existence or non-existence of the game/player combo
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_is_4xx(&resp);
     }
 
     #[test]
@@ -613,12 +609,12 @@ mod tests {
             3, // this player does not exist in that game
             player.token.clone(),
         );
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_is_4xx(&resp);
 
         // try to make a move for the player with the correct player ID but wrong game ID
         let resp =
             test.make_scavenge_move(GameId(2), player.player_id_in_game, player.token.clone());
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_is_4xx(&resp);
     }
 
     #[test]
@@ -647,7 +643,7 @@ mod tests {
             Arc::clone(&test.lobby),
             Arc::clone(&test.game_manager),
         );
-        assert_eq!(resp.status(), StatusCode::NOT_ACCEPTABLE);
+        assert_is_4xx(&resp);
     }
 
     // logic test helpers
@@ -784,5 +780,10 @@ mod tests {
             .and_then(|h| h.to_str().ok())
             .expect(&format!("missing header `{:?}`", header_name));
         assert_eq!(actual_value, header_value);
+    }
+
+    fn assert_is_4xx<T>(resp: &Response<T>) {
+        let status_code = resp.status().as_u16();
+        assert_eq!(status_code / 100, 4);
     }
 }
