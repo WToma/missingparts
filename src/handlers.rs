@@ -276,6 +276,7 @@ struct PrivateCardResponse {
 mod tests {
     use super::*;
 
+    use crate::actionerror::ActionError;
     use crate::gameplay::GameDescription;
 
     use serde::de::DeserializeOwned;
@@ -513,19 +514,90 @@ mod tests {
 
     #[test]
     fn test_game_make_move() {
-        unimplemented!()
+        let test = TestServer::new();
+
+        // 2 players join the lobby, which starts a game
+        let player: JoinedLobbyResponse = parse_response(test.join_lobby(2, 4));
+        test.join_lobby(2, 4);
+        let game: JoinedGameResponse = parse_response(test.get_lobby_player_status(&player));
+
+        // the first player to join the lobby becomes the first player in the game.
+        // the first player makes a move (Scavenge)
+        let resp = test.make_scavenge_move(
+            GameId(game.game_id),
+            game.player_id_in_game,
+            Some(player.token),
+        );
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[test]
     fn test_game_make_move_invalid_move() {
-        // the move is not valid in this game state, so we get a bad request with an actionerror
-        unimplemented!()
+        let test = TestServer::new();
+
+        // 2 players join the lobby, which starts a game
+        test.join_lobby(2, 4);
+        let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
+
+        // the first player to join the lobby becomes the first player in the game.
+        // the _second_  player tries to make a move (Scavenge)
+        let resp = test.make_scavenge_move(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            player.token,
+        );
+
+        // but since it isn't their turn, we get an error
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // with an appropriate error body
+        parse_response::<ActionError>(resp);
     }
 
     #[test]
     fn test_game_make_move_invalid_cases() {
-        // missing / invalid / belonging to another player token, invalid game id, invalid player id
-        unimplemented!()
+        let test = TestServer::new();
+
+        // 2 players join the lobby, which starts a game
+        let other_player: JoinedLobbyResponse = parse_response(test.join_lobby(2, 4));
+        let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
+
+        // try to make a move for the player with a missing token
+        let resp = test.make_scavenge_move(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            None, // missing token
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to make a move for the player with an invalid token
+        let resp = test.make_scavenge_move(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            Some(String::from("mellon")), // invalid token
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to make a move for the player with an invalid token
+        let resp = test.make_scavenge_move(
+            GameId(player.game_id),
+            player.player_id_in_game,
+            Some(other_player.token), // token belongs to another player
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to make a move for the player with the correct game ID but invalid player ID
+        let resp = test.make_scavenge_move(
+            GameId(player.game_id),
+            3, // this player does not exist in that game
+            player.token.clone(),
+        );
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // try to make a move for the player with the correct player ID but wrong game ID
+        let resp =
+            test.make_scavenge_move(GameId(2), player.player_id_in_game, player.token.clone());
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
@@ -587,6 +659,21 @@ mod tests {
             get(
                 &format!("/games/{:?}", game_id.0),
                 None, // this endpoint does not require authorization
+                Arc::clone(&self.lobby),
+                Arc::clone(&self.game_manager),
+            )
+        }
+
+        fn make_scavenge_move(
+            &self,
+            game_id: GameId,
+            player_id: usize,
+            token: Option<String>,
+        ) -> Response<Body> {
+            post(
+                &format!("/games/{:?}/players/{:?}/moves", game_id.0, player_id),
+                token.as_ref().map(|s| s.as_str()),
+                "\"Scavenge\"".to_string(),
                 Arc::clone(&self.lobby),
                 Arc::clone(&self.game_manager),
             )
