@@ -413,7 +413,7 @@ mod tests {
         let resp = test.join_lobby(2, 4);
 
         // they immediately get assigned to a game
-        assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(resp.status(), StatusCode::CREATED);
         assert_header(&resp, "Location", "/games/0/players/1/private");
 
         let resp: JoinedGameResponse = parse_response(resp);
