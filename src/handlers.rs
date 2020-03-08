@@ -646,6 +646,59 @@ mod tests {
         assert_is_4xx(&resp);
     }
 
+    #[test]
+    fn test_invalid_body() {
+        let test = TestServer::new();
+
+        // trying to an post invalid body to the lobby join endpoint (not a valid JSON):
+        let resp = post(
+            "/lobby",
+            None,
+            "{\"".to_string(),
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+
+        // we get a "bad request"
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // trying to an post invalid body to the lobby join endpoint (correct JSON, but does not have the expected
+        // format):
+        let resp = post(
+            "/lobby",
+            None,
+            "{\"wrong_field\": true, \"max_game_size\": 4}".to_string(),
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+
+        // we get a "bad request"
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // and somewhere inside the response body we get an explanation of what's wrong
+        // (in this case, `min_game_size` is missing)
+        assert!(get_response_text(resp).contains("min_game_size"));
+
+        test.join_lobby(2, 4);
+        let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
+
+        // trying to an post invalid body to the make move endpoint (correct JSON, but does not have the expected
+        // format):
+        let resp = post(
+            &format!(
+                "/games/{:?}/players/{:?}/moves",
+                player.game_id, player.player_id_in_game
+            ),
+            player.token.as_ref().map(|s| s.as_str()),
+            "\"InvalidAction\"".to_string(),
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+
+        // we get a "bad request"
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
     // logic test helpers
     struct TestServer {
         lobby: Arc<Lobby>,
@@ -760,13 +813,18 @@ mod tests {
             .unwrap()
     }
 
-    fn parse_response<T: DeserializeOwned>(r: Response<Body>) -> T {
+    fn get_response_text(r: Response<Body>) -> String {
         let body = r.into_body();
         let full_body = Runtime::new()
             .unwrap()
             .block_on(hyper::body::to_bytes(body))
             .unwrap();
         let full_body_str = str::from_utf8(&full_body).unwrap();
+        String::from(full_body_str)
+    }
+
+    fn parse_response<T: DeserializeOwned>(r: Response<Body>) -> T {
+        let full_body_str = &get_response_text(r);
         serde_json::from_str(full_body_str)
             .expect(&format!("failed to deserialize `{:?}`", full_body_str))
     }
