@@ -602,8 +602,31 @@ mod tests {
 
     #[test]
     fn test_invalid_urls() {
-        // not matching any url, or patterns matching but path variables cannot be parsed
-        unimplemented!()
+        let test = TestServer::new();
+        let resp = get(
+            "/notfound",
+            None,
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        let resp = get(
+            "/games/this_is_not_a_game_id",
+            None,
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+        let resp = post(
+            "/games/0",
+            None,
+            "".to_string(),
+            Arc::clone(&test.lobby),
+            Arc::clone(&test.game_manager),
+        );
+        assert_eq!(resp.status(), StatusCode::NOT_ACCEPTABLE);
     }
 
     // logic test helpers
