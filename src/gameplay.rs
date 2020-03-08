@@ -5,6 +5,8 @@
 use crate::actionerror::*;
 use crate::cards::*;
 use crate::playeraction::*;
+#[cfg(test)]
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
@@ -107,6 +109,7 @@ impl Player {
 
 /// The part of the game's observable state that determines which actions or multi-part completing actions can be taken.
 #[derive(PartialEq, Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 pub enum GameState {
     /// The game is waiting for a turn action from `player` (see [`PlayerAction`](enum.PlayerAction.html)).
     WaitingForPlayerAction {
@@ -734,6 +737,7 @@ impl Gameplay {
 /// A description, or observable state, of a player that can be shown to all players. Obtain an instance from
 /// [`GameDescription`](struct.GameDescription.html).
 #[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 pub struct PlayerDescription {
     /// The cards that the player has.
     pub gathered_parts: Vec<Card>,
@@ -751,6 +755,7 @@ pub struct PlayerDescription {
 
 /// A description, or observable state, of the game that can be shown to all players.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize))]
 pub struct GameDescription {
     /// The number of cards in the draw deck
     pub num_cards_in_draw: usize,

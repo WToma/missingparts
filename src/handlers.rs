@@ -275,6 +275,9 @@ struct PrivateCardResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::gameplay::GameDescription;
+
     use serde::de::DeserializeOwned;
     use serde_json;
     use tokio::runtime::Runtime;
@@ -425,7 +428,7 @@ mod tests {
     fn test_game_get_private_card() {
         let test = TestServer::new();
 
-        // 2 players join the lobby
+        // 2 players join the lobby, which starts a game
         test.join_lobby(2, 4);
         let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
 
@@ -443,11 +446,9 @@ mod tests {
 
     #[test]
     fn test_game_get_private_card_invalid_cases() {
-        // missing / invalid / belonging to another player token, invalid game id, invalid player id
-
         let test = TestServer::new();
 
-        // 2 players join the lobby
+        // 2 players join the lobby, which starts a game
         let other_player: JoinedLobbyResponse = parse_response(test.join_lobby(2, 4));
         let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
 
@@ -495,16 +496,29 @@ mod tests {
 
     #[test]
     fn test_game_describe() {
-        unimplemented!()
+        let test = TestServer::new();
+
+        // 2 players join the lobby, which starts a game
+        test.join_lobby(2, 4);
+        let player: JoinedGameResponse = parse_response(test.join_lobby(2, 4));
+
+        parse_response::<GameDescription>(test.describe_game(GameId(player.game_id)));
     }
 
     #[test]
     fn test_game_describe_invalid_game_id() {
-        unimplemented!()
+        let resp = TestServer::new().describe_game(GameId(0));
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
     fn test_game_make_move() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn test_game_make_move_invalid_move() {
+        // the move is not valid in this game state, so we get a bad request with an actionerror
         unimplemented!()
     }
 
@@ -564,6 +578,15 @@ mod tests {
             get(
                 &format!("/games/{:?}/players/{:?}/private", game_id.0, player_id),
                 token.as_ref().map(|s| s.as_str()),
+                Arc::clone(&self.lobby),
+                Arc::clone(&self.game_manager),
+            )
+        }
+
+        fn describe_game(&self, game_id: GameId) -> Response<Body> {
+            get(
+                &format!("/games/{:?}", game_id.0),
+                None, // this endpoint does not require authorization
                 Arc::clone(&self.lobby),
                 Arc::clone(&self.game_manager),
             )
