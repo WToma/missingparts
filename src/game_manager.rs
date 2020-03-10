@@ -156,102 +156,20 @@ mod tests {
     use super::*;
     use crate::lobby::GameCreator;
 
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-    use std::thread::JoinHandle;
-    use std::time::Duration;
-
     #[test]
     fn test_concurrent_read_access() {
-        let game_manager = Arc::new(GameManager::new());
+        let game_manager = GameManager::new();
         let game_id = game_manager.new_game(vec![Token::random(), Token::random()]);
-        let game_id2 = game_id;
-        let arced_game_manager = Arc::clone(&game_manager);
 
-        // this test will deadlock if `with_game` access is serialized
+        // this test will deadlock if `with_game` doesn't allow concurrent access
 
-        // start with a 2 locked semaphores.
-        let (waiter1, goer1) = BasicLockingSemaphore::one_way_release();
-        let (waiter2, goer2) = BasicLockingSemaphore::one_way_release();
-
-        let handle: JoinHandle<GameDescription> = thread::spawn(move || {
-            arced_game_manager
-                .with_game(game_id, |game| {
-                    goer2.go(); // let the main thread proceed
-                    waiter1.wait(); // this will block until the semaphore is released, which is done
-                                    // inside the other `with_game` call
-                    game.describe()
-                })
-                .unwrap()
-        });
-
-        game_manager.with_game(game_id2, |game| {
-            waiter2.wait();
-            goer1.go(); // let the child thread proceed
-            let my_description = game.describe();
-            let thread_description = handle.join().unwrap();
-            assert_eq!(my_description, thread_description);
+        game_manager.with_game(game_id, |_| {
+            game_manager.with_game(game_id, |_| {});
         });
     }
 
     #[test]
     fn test_blocking_write_access() {
         unimplemented!();
-    }
-
-    trait Waiter {
-        fn wait(&self);
-    }
-
-    trait Goer {
-        fn go(&self);
-    }
-
-    struct BasicLockingSemaphore {
-        counter: Mutex<u32>,
-    }
-
-    impl BasicLockingSemaphore {
-        fn new(initial_counter: u32) -> BasicLockingSemaphore {
-            BasicLockingSemaphore {
-                counter: Mutex::new(initial_counter),
-            }
-        }
-
-        fn one_way_release() -> (Arc<impl Waiter>, Arc<impl Goer>) {
-            let waiter = Arc::new(Self::new(1));
-            waiter.acquire();
-            let goer = Arc::clone(&waiter);
-            (waiter, goer)
-        }
-
-        fn acquire(&self) {
-            loop {
-                {
-                    let mut counter = self.counter.lock().unwrap();
-                    if *counter > 0 {
-                        *counter -= 1;
-                        return;
-                    }
-                }
-                thread::sleep(Duration::from_millis(1));
-            }
-        }
-
-        fn release(&self) {
-            let mut counter = self.counter.lock().unwrap();
-            *counter += 1;
-        }
-    }
-    impl Waiter for BasicLockingSemaphore {
-        fn wait(&self) {
-            self.acquire();
-        }
-    }
-
-    impl Goer for BasicLockingSemaphore {
-        fn go(&self) {
-            self.release();
-        }
     }
 }
