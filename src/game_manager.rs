@@ -161,7 +161,7 @@ mod tests {
         let game_manager = GameManager::new();
         let game_id = game_manager.new_game(vec![Token::random(), Token::random()]);
 
-        // this test will deadlock if `with_game` doesn't allow concurrent access
+        // this test will deadlock if `with_game` doesn't allow concurrent access to the same game
 
         game_manager.with_game(game_id, |_| {
             game_manager.with_game(game_id, |_| {});
@@ -169,7 +169,28 @@ mod tests {
     }
 
     #[test]
-    fn test_blocking_write_access() {
-        unimplemented!();
+    fn test_concurrent_read_write_access_for_different_games() {
+        let game_manager = GameManager::new();
+        let game_id1 = game_manager.new_game(vec![Token::random(), Token::random()]);
+        let game_id2 = game_manager.new_game(vec![Token::random(), Token::random()]);
+
+        // this test will deadlock if `GameManager` doesn't allow concurrent `with_game` and `with_mut_game` access
+        // to 2 different games
+
+        game_manager.with_mut_game(game_id1, |_| {
+            game_manager.with_game(game_id2, |_| {});
+        });
+
+        game_manager.with_game(game_id1, |_| {
+            game_manager.with_mut_game(game_id2, |_| {});
+        });
     }
+
+    // #[test]
+    // fn test_blocking_write_access() {
+    //     // this test tests that with_game and with_mut_game are not concurrent for the same game
+    //     unimplemented!() // not sure how test this reliably
+    // }
+
+    // token verification tests are in the handlers.rs tests
 }
