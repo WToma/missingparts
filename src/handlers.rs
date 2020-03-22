@@ -24,6 +24,7 @@ pub async fn missingparts_service(
     game_manager: Arc<GameManager>,
     req: Request<Body>,
 ) -> Result<Response<Body>, Infallible> {
+    // TODO: add cache headers and content type into response! this should probably be in server_utils
     let (parts, body) = req.into_parts();
     let rich_parts = RichParts::from(&parts);
     let response_mime_type = if let Some(mime_type) = rich_parts.guess_response_type() {

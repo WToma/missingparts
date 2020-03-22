@@ -1,3 +1,7 @@
+//! Some helper types and functions to work with requests and responses in hyper with serde
+//!
+//! See the [`RichParts`](struct.RichParts.html) type for useful methods.
+
 use std::convert::TryFrom;
 use std::fmt;
 use std::str;
@@ -11,14 +15,51 @@ use json5;
 use serde::{de, Serialize};
 use serde_json;
 
+/// The different errors that can happen while parsing a request body.
+///
+/// The enum can be directly turned into a response using `into::<Response<Body>>()`.
 pub enum BodyParseError {
+    /// The request specified an unsupported Content-Type for the request body. The unsupported content type is
+    /// indicated inside the error.
+    ///
+    /// Note: the Content-Type header is optional, if missing, a default content type will be assumed. (See
+    /// [`RichRequest.get_content_type`](struct.RichRequest.html#method.get_content_type).) However if present it
+    /// _must_ be one of the supported content types, otherwise this error will happen.
     UnsupportedContentType(MimeType),
+
+    /// The request specified an unsupported charset attribute inside the Content-Type header of the request. The
+    /// unsupported charset is indicated inside the error.
+    ///
+    /// Note that specifying the charset attribute of the request is optional. If missing, a utf8 will be assumed. All
+    /// other charsets are unsupported.
     UnsupportedCharset(String),
-    RequestTooLarge(usize, usize),
+
+    /// The Content-Length of the request was larger than the maximum the server was willing to process. (This is the
+    /// `max_length` parameter specified to the deserialization method.)
+    RequestTooLarge {
+        /// The maximum size the server is willing to process
+        max_size: usize,
+
+        /// The size of the request
+        actual_size: usize,
+    },
+
+    /// Errors encountered by the server framework while trying to read the whole request body into memory. Lots of
+    /// these indicate errors around prematurely closed client connections, so these are not necessarily server errors
+    /// per se.
     BodyReadingError(HyperError),
+
+    /// The request did not specify the required Content-Length header.
     ContentLengthMissing,
+
+    /// The request body could not be read as UTF8-encoded text. Note that only UTF8 is supported.
     EncodingError(str::Utf8Error),
+
+    /// The request could not be parsed as the specified JSON object. Note that if Content-Type was not specified, JSON
+    /// is assumed.
     JsonError(serde_json::Error),
+
+    /// The request could not be parsed as the specified JSON5 object.
     Json5Error(json5::Error),
 }
 
@@ -60,11 +101,14 @@ impl Into<Response<Body>> for BodyParseError {
                     charset
                 ),
             ),
-            RequestTooLarge(size, max_size) => (
+            RequestTooLarge {
+                actual_size,
+                max_size,
+            } => (
                 StatusCode::PAYLOAD_TOO_LARGE,
                 format!(
                     "body must be not larger than {} bytes, was {}",
-                    max_size, size
+                    max_size, actual_size
                 ),
             ),
             ContentLengthMissing => (
@@ -128,6 +172,11 @@ impl From<MimeType> for ContentType {
     }
 }
 
+/// A MIME type and subtype. Both the type and the subtype can be `*` (wildcard). This is currently only useful
+/// as an intermediate type for [`SupportedMimeType`](enum.SupportedMimeType.html), and to denote the unsupported
+/// MIME type in [`BodyParseError::UnsupportedContentType`](enum.BodyParseError.html#variant.UnsupportedContentType).
+///
+/// To create an instance, use `MimeType::from(&str)`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MimeType {
     mime_type: String,
@@ -151,6 +200,17 @@ impl MimeType {
     }
 }
 impl From<&str> for MimeType {
+    /// Parses a slash-separated mime type and subtype.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use missingparts::server_utils::MimeType;
+    /// # use std::convert::From;
+    ///
+    /// MimeType::from("application/json");
+    /// MimeType::from("application/*");
+    /// ```
     fn from(s: &str) -> MimeType {
         let mut parts = s.split('/');
         let mime_type = String::from(parts.next().unwrap()); // OK to unwrap, first element on spliterator always exists
@@ -167,6 +227,9 @@ impl fmt::Display for MimeType {
     }
 }
 
+/// A MIME type that can be used for serializing and deserializing content. Currently JSON and JSON5 are supported.
+///
+/// This can be used to serialize a response body using [`serialize`](#method.serialize).
 pub enum SupportedMimeType {
     Json,
     Json5,
@@ -190,6 +253,7 @@ impl SupportedMimeType {
         }
     }
 
+    /// Serializes `x` according to this supported mime type into a hyper response body.
     pub fn serialize<T: Serialize>(&self, x: &T) -> Body {
         use SupportedMimeType::*;
         match self {
@@ -242,6 +306,97 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
         }
     }
 }
+
+/// Provides convenience methods to work with requests.
+///
+/// To deserialize a request, use [`deserialize_by_content_type`](#method.deserialize_by_content_type). Conversely,
+/// to serialize a response use [`guess_response_type`](#method.guess_response_type) and use
+/// [`serialize`](enum.SupportedMimeType.html#method.serialize) on the result.
+///
+/// To see if the request matches a particular path, see [`try_match`](#method.try_match) and
+/// [`does_match`](#method.does_match).
+///
+/// Quickly access the Authorization header value with [`token`](#method.token).
+///
+/// # Examples
+///
+/// ```
+/// # use missingparts::server_utils::*;
+/// # use hyper::{Request, Response, Body};
+/// # use serde::{Deserialize, Serialize};
+/// # use http;
+/// # use tokio::runtime::Runtime;
+/// # use core::future::Future;
+/// # use std::str;
+/// # fn get_response_text<R>(r: R) -> String where R: Future<Output=Response<Body>> {
+/// #     let full_body_future = async {
+/// #       let r = r.await;
+/// #       let body = r.into_body();
+/// #       hyper::body::to_bytes(body).await
+/// #     };
+/// #     let full_body = Runtime::new()
+/// #         .unwrap()
+/// #         .block_on(full_body_future)
+/// #         .unwrap();
+/// #     let full_body_str = str::from_utf8(&full_body).unwrap();
+/// #     String::from(full_body_str)
+/// # }
+/// #[derive(Deserialize)]
+/// struct MyImportantRequest {
+///     my_important_field: i32,
+/// }
+///
+/// #[derive(Serialize)]
+/// struct MyImportantResponse {
+///     requester_id: u32,
+///     message: String,
+/// }
+///
+/// let body = "{my_important_field: 42}";
+///
+/// // create a simple mock request with a JSON5 request body, expecting a JSON response.
+/// // this is not very typical, but it's possible with `RichParts`
+/// let request = Request::post("/echo/1234")
+///     .header("Content-Type", "application/json5")
+///     .header("Accept", "application/json")
+///     .header("Content-Length", &format!("{:?}", body.len()))
+///     .body(Body::from(body)).unwrap();
+///
+/// let response = async {
+///     let (parts, body) = request.into_parts();
+///     let rich_parts = RichParts::from(&parts);
+///
+///     // in real code reply with NOT_ACCEPTABLE here
+///     let response_mime_type = rich_parts.guess_response_type().unwrap();
+///
+///     // this mock service only handles one path, that has one path parameter
+///     // if the request method and request path match the path pattern, then try to deserialize
+///     // the request into a struct.
+///     if let Ok(TupleWrapper1(requester_id)) = rich_parts.try_match(
+///         &http::Method::POST,
+///         "/echo/{}",
+///     ) {
+///         let request: MyImportantRequest = rich_parts.deserialize_by_content_type(body, 1024)
+///             .await
+///             // in real code reply with BAD_REQUEST here
+///             .unwrap_or_else(|_| panic!("failed to parse request body"));
+///         Response::builder()
+///             .status(http::StatusCode::OK)
+///             .body(response_mime_type.serialize(&MyImportantResponse {
+///                 requester_id,
+///                 message: format!("your important value is {}", request.my_important_field),
+///             }))
+///             .unwrap()
+///     } else {
+///         panic!("wrong path"); // in real code reply with NOT_FOUND or METHOD_NOT_ALLOWED
+///     }
+/// };
+///
+/// assert_eq!(
+///     get_response_text(response),
+///     "{\"requester_id\":1234,\"message\":\"your important value is 42\"}",
+/// );
+/// ```
 pub struct RichParts {
     method: http::Method,
     uri_path: String,
@@ -329,7 +484,10 @@ impl RichParts {
         // to Content-Length bytes).
         let content_length: usize = self.get_content_length().ok_or(ContentLengthMissing)?;
         if content_length > max_content_length {
-            return Err(RequestTooLarge(content_length, max_content_length));
+            return Err(RequestTooLarge {
+                actual_size: content_length,
+                max_size: max_content_length,
+            });
         }
 
         // read & deserialize the body
