@@ -9,7 +9,7 @@ use std::convert::TryFrom;
 ///
 /// Actions can be categorized roughly into 2 types:
 /// - a _turn action_ can be taken at the beginnig of a player's turn.
-/// - a _completing action_ can be taken to complete a turn action requiring a multi-step intreaction, such as
+/// - a _completing action_ can be taken to complete a turn action requiring a multi-step interaction, such as
 ///   scavenging (pick which card to keep) or trading (the offer must be accepted or rejected).
 ///
 /// Unless otherwise indicated for a variant, it's a turn action. For completing actions the variant-level documentation

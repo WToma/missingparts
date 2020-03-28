@@ -23,7 +23,7 @@ pub enum BodyParseError {
     /// indicated inside the error.
     ///
     /// Note: the Content-Type header is optional, if missing, a default content type will be assumed. (See
-    /// [`RichRequest.get_content_type`](struct.RichRequest.html#method.get_content_type).) However if present it
+    /// [`RichParts.get_content_type`](struct.RichParts.html#method.get_content_type).) However if present it
     /// _must_ be one of the supported content types, otherwise this error will happen.
     UnsupportedContentType(MimeType),
 

@@ -72,7 +72,7 @@ impl TokenVerifier<usize> for ManagedGame {
 /// Manages games in the server. This is the primary way games should be interacted with.
 /// Safe for concurrent access.
 ///
-/// Use `new`(#method.new) to create an instance.
+/// Use [`new`](#method.new) to create an instance.
 ///
 /// To start a new game under the manager, use [`GameCreator`](#impl-GameCreator).`new_game`. After that use
 /// [`with_game`](#method.with_game) for read-only queries on a game, or
