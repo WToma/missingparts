@@ -570,6 +570,12 @@ impl RichParts {
     ///   of the request path.
     /// - if the part at the `i`th place of the pattern is a variable, the text present as the `i`th part of the request
     ///   path must be parseable into the required type.
+    ///  
+    /// For example, the following cases would _not_ match:
+    /// - request path: `/authors/Douglas+Adams/books/42`, pattern: `/players/{}/inventory` (the first constant
+    ///   component did not match)
+    /// - request path: `/authors/Douglas+Adams/books/42`, pattern: `/authors/{}` (the request had more components to it
+    ///   than the pattern)
     ///
     /// # A note on URL encoding
     ///
@@ -592,9 +598,9 @@ impl RichParts {
     ///
     /// let expected_path = "/authors/{}/books/{}";
     ///
-    /// // note: most of the time you can omit the explicit type parameters for the `TupleWrapper` types. The compiler
-    /// // will infer them from their usage. In this case we're doing ambigous `assert_eq` macro calls only so the
-    /// // compiler won't be able to infer the exact types
+    /// // note: most of the time you can omit the explicit type parameters for the `TupleWrapperN`
+    /// // types. The compiler will infer them from their usage. In this case we're doing ambigous
+    /// // `assert_eq` macro calls only so the compiler won't be able to infer the exact types.
     /// if let Ok(TupleWrapper2::<String, u32>(author, book_id)) = rich_parts.try_match(
     ///     &http::Method::GET,
     ///     expected_path,
@@ -636,6 +642,7 @@ impl RichParts {
         T::try_from(variables).map_err(|e| PartsParseError(e))
     }
 
+    /// Returns the value of the `Authorization` header, if it was present.
     pub fn token(&self) -> Option<&str> {
         self.token.as_ref().map(|s| s.as_str())
     }
@@ -680,18 +687,56 @@ impl RichParts {
 
 // helpers for parsing URLs
 
+/// The different errors that can happen while attempting to use [`try_match`](struct.RichParts.html#method.try_match).
 pub enum UriMatchError {
+    /// The method of the HTTP request did not match the expected method.
+    ///
+    /// `.0` is the actual HTTP method from the request.
+    ///
+    /// Note that if you receive this error, that means that `try_match` have not tried to parse the path at all, so
+    /// receiving this error should not be taken as an indication that the path itself matched, and it was only the
+    /// method that was mismatched.
+    ///
+    /// In practice, if your application processes multiple paths, the code should keep trying those other paths to
+    /// see if any of them match.
     MethodNotAllowed(http::Method),
+
+    /// The path of the HTTP request did not match the expected path pattern.
+    ///
+    /// `.0` is the actual path from the HTTP request.
     PathDoesNotMatch(String),
+
+    /// The path of the HTTP request matched the pattern, but some path variables could not be parsed to the expected
+    /// type.
+    ///
+    /// `.0` contains more details about what exactly was the problem.
+    ///
+    /// This can happen for example if a path parameter expected an integer, but was given a string that could not be
+    /// parsed as an integer. Another possible cause of this error is if the code uses a `TupleWrapperN` type where
+    /// `N != the number of path variables in the pattern`.
     PartsParseError(TupleWrapperParseError),
 }
 
+/// Detailed information about why parsing parameters for a matching path (see
+/// [`PartsParseError`](enum.UriMatchError.html#variant.PartsParseError)) failed.
 pub enum TupleWrapperParseError {
+    /// The path pattern contained more parameters than the output tuple.
+    ///
+    /// This is usually a programming error, you likely have the wrong `TupleWrapperN` variant.
     TooManyParams(usize),
+
+    /// The path pattern contained less parameters than the output tuple.
+    ///
+    /// This is usually a programming error, you likely have the wrong `TupleWrapperN` variant.
     TooFewParams(usize),
+
+    /// One of the parts could not be parsed to the expected type. `.0` indicates which part failed parsing.
     FailedToParsePart(usize),
 }
 
+/// Used to parse path parameters
+///
+/// See [`try_match`](struct.RichParts.html#method.try_match) for an example.
 pub struct TupleWrapper1<T>(pub T);
 impl<'a, T1> TryFrom<Vec<&'a str>> for TupleWrapper1<T1>
 where
@@ -713,6 +758,9 @@ where
     }
 }
 
+/// Used to parse path parameters
+///
+/// See [`try_match`](struct.RichParts.html#method.try_match) for an example.
 pub struct TupleWrapper2<T1, T2>(pub T1, pub T2);
 impl<'a, T1, T2> TryFrom<Vec<&'a str>> for TupleWrapper2<T1, T2>
 where
