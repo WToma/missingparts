@@ -1,6 +1,6 @@
 //! Some helper types and functions to work with requests and responses in hyper with serde
 //!
-//! See the [`RichParts`](struct.RichParts.html) type for useful methods.
+//! See the [`RichParts`](struct.RichParts.html) type for useful methods and a complete example.
 
 use std::convert::TryFrom;
 use std::fmt;
@@ -311,10 +311,19 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
 ///
 /// To deserialize a request, use [`deserialize_by_content_type`](#method.deserialize_by_content_type). Conversely,
 /// to serialize a response use [`guess_response_type`](#method.guess_response_type) and use
-/// [`serialize`](enum.SupportedMimeType.html#method.serialize) on the result.
+/// [`serialize`](enum.SupportedMimeType.html#method.serialize) on the result. For serialization and deserialization
+/// currently JSON (`application/json`) and JSON5 (`application/json5`) are supported.
 ///
 /// To see if the request matches a particular path, see [`try_match`](#method.try_match) and
 /// [`does_match`](#method.does_match).
+///
+/// The requests that can be used with `RichParts` have a few restrictions:
+/// - The `Content-Length` header must be present if the request body needs to be parsed.
+/// - For parsing the request body, the `Content-Type` header must be either present and have one of the supported
+///   values, or if missing, `application/json` will be assumed, so the request body must be valid JSON.
+/// - The request body must be valid UTF-8. No other encodings are supported.
+/// - If a response is to be returned, either an `Accept` header is required with one of the supported content types,
+///   or the response will default to the same MIME type as `Content-Type`.
 ///
 /// Quickly access the Authorization header value with [`token`](#method.token).
 ///
@@ -378,7 +387,7 @@ impl<'a> From<hyper::header::GetAll<'a, HeaderValue>> for Accept {
 ///     ) {
 ///         let request: MyImportantRequest = rich_parts.deserialize_by_content_type(body, 1024)
 ///             .await
-///             // in real code reply with BAD_REQUEST here
+///             // in real code turn the error value into a HTTP response using `into::Response<<Body>>()`
 ///             .unwrap_or_else(|_| panic!("failed to parse request body"));
 ///         Response::builder()
 ///             .status(http::StatusCode::OK)
@@ -432,6 +441,14 @@ impl RichParts {
         &self.content_length
     }
 
+    /// Returns a best effort value as to what the content type of the response should be.
+    ///
+    /// The rules to determine the response content type are the following:
+    /// 1. If the client specified a supported MIME type in the Accept header, one of those values will be used (note:
+    ///    currently weights are not supported, instead the first supported value will be used).
+    /// 2. If the caller sent an Accept header, but it contained no supported MIME types, the result will be `None`.
+    /// 3. Otherwise, if the Content-Type is known and supported, that will be returned. (This includes falling back to
+    ///    the default content type.)
     pub fn guess_response_type(&self) -> Option<SupportedMimeType> {
         let explicit_accept_type = self
             .accept
@@ -457,6 +474,18 @@ impl RichParts {
         })
     }
 
+    /// Deserialies the request body into the specified type.
+    ///
+    /// The request must be in the format specified by `Content-Type` (see the struct-level documentation). Failing to
+    /// read or parse the body according to the expected `Content-Type`, and `T`, will cause this method to return an
+    /// error. The error can be directly turned into an appropriate HTTP response, see
+    /// [`BodyParseError`](enum.BodyParseError.html).
+    ///
+    /// To protect against requests that are too large, a possible attack vector, a maximum size must be specified. If
+    /// the content length is greater than `max_content_length`, the function will not make an attempt to read the body.
+    /// Hyper internally ensures that the body is not read eagerly before requested, and it will not read more than the
+    /// number of bytes in `Content-Length` (if present). Thus this method requires `Content-Length` to be present and
+    /// not greater than `max_content_length`.
     pub async fn deserialize_by_content_type<T: de::DeserializeOwned>(
         &self,
         body: Body,
@@ -496,10 +525,86 @@ impl RichParts {
         content_type.deserialize(full_body_str)
     }
 
+    /// Returns `true` if the request method in this request is the same as `method`, and the request path is the same
+    /// as `path`.
+    ///
+    /// If you need to match paths with a path variable (placeholder) in them, see
+    /// [`try_match`](struct.RichParts.try_match).
     pub fn does_match(&self, method: &http::Method, path: &str) -> bool {
         &self.method == method && self.uri_path == path
     }
 
+    /// Attempts to match the request method and path in this request against the specified method and path pattern.
+    ///
+    /// This method is intended to be used with the `TupleWrapperN` types (where `N` is the number of members in the
+    /// tuple, so in this case the number of path variables, or placeholders).
+    ///
+    /// # Parameters
+    /// - `method`: if the request method is not the same as this, this function will fail with
+    ///   [`MethodNotAllowed`](enum.UriMatchError#variant.MethodNotAllowed) before even attempting to parse the
+    ///   path or the path pattern.
+    /// - `path_pattern` is the path pattern against which the actual request path will be matched.
+    ///
+    /// # Path Patterns
+    /// The path pattern consists of a sequence of parts. Each part is separated by a literal `/`. Each part can be
+    /// either a constant, or a variable (placeholder). The constants are literals of characters permitted in URIs,
+    /// except a `/`. The variables are marked by `{}`.
+    ///
+    /// Some valid path patterns would be:
+    /// - `/authors/{}` -- matches `/authors/123`, `/authors/tolkien`, or `/authors/j+r+r+tolkien`
+    /// - `/authors/{}/books/{}/` -- matches `/authors/123/books/the+lord+of+the+rings/`
+    /// - `/{}/{}/{}` -- matches `/123/metal%2Fhammer/321`
+    ///
+    /// Leading `/`s are required, as hyper will provide the request path with a leading `/`. Trailing `/`s are
+    /// optional, in that the path pattern is valid without it, but the client and the server must agree whether they
+    /// should be present or not.
+    ///
+    /// Valid patterns that are useless in practice
+    /// - `/authors`, `/` -- there are no variables, so none of the built-in `TupleWrapperN` types can be used. You
+    ///   could provide your own, but in this case just use [`does_match`](struct.RichParts.does_match).
+    ///
+    /// # Matching Path Patterns
+    /// The request path is considered to be matching the path pattern if the following are true:
+    /// - they have the same number of parts.
+    /// - if the part at the `i`th place of the pattern is a constant, the same constant is present as the `i`th part
+    ///   of the request path.
+    /// - if the part at the `i`th place of the pattern is a variable, the text present as the `i`th part of the request
+    ///   path must be parseable into the required type.
+    ///
+    /// # A note on URL encoding
+    ///
+    /// Note that in the above examples we used URL encoded values like `j+r+r+tolkien` or `metal%2Fhammer`. `RichParts`
+    /// does not do any decoding these values; if you match on any of these, they will yield the encoded values. Thus
+    /// further processing is needed to URL decode any strings you may receive.
+    ///
+    /// # Examples
+    /// ```
+    /// # use hyper::Request;
+    /// # use http;
+    /// #
+    /// # use missingparts::server_utils::*;
+    ///
+    /// let request_path = "/authors/Douglas%20Adams/books/42";
+    ///
+    /// let request: Request<()> = Request::get(request_path).body(()).unwrap();
+    /// let (parts, body) = request.into_parts();
+    /// let rich_parts = RichParts::from(&parts);
+    ///
+    /// let expected_path = "/authors/{}/books/{}";
+    ///
+    /// // note: most of the time you can omit the explicit type parameters for the `TupleWrapper` types. The compiler
+    /// // will infer them from their usage. In this case we're doing ambigous `assert_eq` macro calls only so the
+    /// // compiler won't be able to infer the exact types
+    /// if let Ok(TupleWrapper2::<String, u32>(author, book_id)) = rich_parts.try_match(
+    ///     &http::Method::GET,
+    ///     expected_path,
+    /// ) {
+    ///     assert_eq!(author, "Douglas%20Adams");
+    ///     assert_eq!(book_id, 42);
+    /// } else {
+    ///     panic!(format!("'{}' did not match '{}'", request_path, expected_path));
+    /// }
+    /// ```
     pub fn try_match<'a, 'b, T>(
         &'a self,
         method: &http::Method,
