@@ -71,6 +71,25 @@
                 "rank"
             ]
         },
+        "join_lobby_request": {
+            "title": "Join Lobby Request",
+            "description": "Indicate to the server what kind of game the client wants to join",
+            "type": "object",
+            "properties": {
+                "min_game_size": {
+                    "description": "The game that the client wants to join will have minimum this many players",
+                    "type": "integer"
+                },
+                "max_game_size": {
+                    "description": "The game that the client wants to join will have maximum this many players",
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "min_game_size",
+                "max_game_size"
+            ]
+        },
         "player_private_response": {
             "title": "Player Private Info Response",
             "description": "Contains the secret information of the player. Sent as a response to the player private info request.",

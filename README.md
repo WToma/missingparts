@@ -52,7 +52,7 @@ The below endpoint descriptions refer to JSON schema types; these are defined in
 
 ### POST `/lobby`
 
-Joins the lobby. No request body, no authentication. Response: `201` with `join_lobby_response`.
+Joins the lobby. Request body: `join_lobby_request`. No auth required. Response: `201` with `join_lobby_response`.
 
 ### GET `/lobby/players/:playerID/game`
 

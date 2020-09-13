@@ -93,9 +93,11 @@ class Backend:
         self.schema = schema
 
     def join_lobby(self, min_game_size: int, max_game_size: int) -> Player:
+        request_json = {"min_game_size": min_game_size,
+                        "max_game_size": max_game_size}
+        schema.validate(request_json, "join_lobby_request")
         resp = requests.post(f"http://{self.server}/lobby",
-                             json={"min_game_size": min_game_size,
-                                   "max_game_size": max_game_size},
+                             json=request_json,
                              allow_redirects=False)
 
         if resp.status_code == 201:
